@@ -1,6 +1,25 @@
 # Handoff: where Plant the Forest stands
 
-Written 2026-10-06; last updated 2026-10-07 at the end of the GUI and polish session. Read this after `CLAUDE.md`, then `docs/DESIGN_CHANGES.md` (what changed from the original GDD and why) and the latest plan in `docs/plans/`.
+Written 2026-10-06; last updated 2026-10-08 at the end of the launch-prep session. Read this after `CLAUDE.md`, then `docs/DESIGN_CHANGES.md` (what changed from the original GDD and why) and the latest plan in `docs/plans/`.
+
+## Where we left off (2026-10-08)
+
+**Not yet in Studio:** the glow ring walls were made shorter (`GlowRingController` WALL_HEIGHT 2.2 → 1.5) after the place was closed. Sync that file when the place is open. Everything else from 2026-10-08 is synced. **The place still needs saving and publishing** (the user does it, or saves to a file and runs `tools/publish_place.py`).
+
+**Git:** the project is on GitHub (https://github.com/allendai1/plant-a-forest.git, branch `main`) since 2026-10-08. Commit and push only when the user asks.
+
+**What changed on 2026-10-08** (each has its own note at the bottom of this file): forest size follows the server's head count (`GameConfig.ForestSize`, `Tiers[].SeedsPerPlayer`); the analytics forest report, ring, tree-gap and leave events, and the layout A/B framework (paused: `OuterFirstShare = 1`); the acorn stack over the head (replaced the circling acorns); Q to drop seeds in the lobby; the gym moved into the garden around the World Tree (drawn at 60%; Spring radius 43); the tree-trunk ring circle next to the Forest Bar (bar ticks removed, green fill gradient); glow rings with a moving wall at the shop and dispensers; 1.5x dispensers with a ring and Wood material; the UPGRADES sign text; nameplates sized in studs and 150-stud max zoom; the speed-limit slider; the Park Ranger's green aura and salute (NPC poses now play on the clients); quieter tree chime; comically fast bench press.
+
+**Before release (from the 2026-10-08 review):**
+1. **M12 performance:** measure a full forest on the phone emulator (needs Studio rendering) and fix the worst costs.
+2. **A two-player test** of the shared features (stacks, nameplates, benches, forest and break).
+3. **One real purchase** on the live game (a pass, a dev product, a Robux upgrade level), by the user.
+4. **Dashboard:** content maturity questionnaire, icon, thumbnails, description, devices, badge icons, products and prices, Lord of the Forest pass off sale, make public.
+5. **Balancing.xlsx** needs the 2026-10-08 numbers (rep 0.266 s, the scaling forest target, Spring 43, max zoom 150, Sherwood 100 per tree).
+
+**Offered, not decided:** weighting the next-world roll by the server's median capacity (weak servers mostly Sherwood, strong ones more Kyoto and Smoky); the mild "count veterans a bit more" forest sizing (only if the data asks for it, see `docs/plans/TuningSignals.md`); updating `tools/build_map.luau` with the moved ranger station (a full map rebuild would put it back).
+
+**Tools added:** `tools/upload_fbx.py` (a Model) and `tools/upload_png.py` (a Decal) upload through Open Cloud with the API key from the environment (free; never spend Robux). A decal's image id: `InsertService:LoadAsset(decalId)` in Studio, then the Decal's Texture.
 
 ## Status
 
@@ -26,6 +45,7 @@ Written 2026-10-06; last updated 2026-10-07 at the end of the GUI and polish ses
 | Polish after the GUI pass (2026-10-06/07, the user's requests one by one) | done; each has its own section below | `docs/plans/TreeStages.md`, `docs/plans/AcornOrbit.md` |
 | Seed shop (special trees that boost training, the user's request) | done 2026-10-07; two-player checks still open | `docs/plans/SeedShop.md` |
 | Polish pass (shops UI, sound, Park Ranger / Forest Lord, codes, seed shop rebalance, leaderboards, badges) | done 2026-10-07; badges need creating on the dashboard, icons still emoji | `docs/plans/Polish.md` |
+| Launch prep (2026-10-08: forest sizing, analytics, lobby and HUD changes; see "Where we left off") | done | this file, `docs/plans/TuningSignals.md` |
 | **M12 Performance pass** | **in progress**: tile collision removed; frame-rate measurement needs Studio rendering | `docs/plans/M12.md` |
 
 Each plan file ends with a "What changed from the plan" section that lists exactly what was verified and what wasn't.
