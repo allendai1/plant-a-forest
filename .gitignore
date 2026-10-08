@@ -1,0 +1,11 @@
+# Generated or temporary
+sync_tmp.luau
+sourcemap.json
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
