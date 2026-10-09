@@ -669,6 +669,11 @@ end
 
 function ForestService.init()
 	local started = os.clock()
+	-- The Edit-mode tile preview (tools/forest_preview.luau) goes before anyone joins: clients build the real tiles.
+	local preview = workspace:FindFirstChild("ForestPreview")
+	if preview then
+		preview:Destroy()
+	end
 	center = findCenter()
 	buildPlots()
 	if GameConfig.Experiments.LayoutTest then

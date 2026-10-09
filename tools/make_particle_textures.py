@@ -127,6 +127,59 @@ def streak(path):
     img.save(path)
 
 
+
+def sun_rays(path):
+    """Soft sun rays on transparent, white so the game tints it (the spring's "2X TRAINING" sign, 2026-10-08): 16 rays
+    alternating long and short, fading out from the middle."""
+    n = 512
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    px = img.load()
+    c = n / 2
+    for y in range(n):
+        for x in range(n):
+            dx, dy = (x + 0.5 - c) / c, (y + 0.5 - c) / c
+            r = math.hypot(dx, dy)
+            if r > 1:
+                continue
+            t = math.atan2(dy, dx)
+            ray = max(0.0, math.cos(16 * t)) ** 3  # 16 rays...
+            long = 0.6 + 0.4 * (0.5 + 0.5 * math.cos(8 * t))  # ...every other one longer
+            fade = max(0.0, 1 - r / long) ** 1.1
+            glow = max(0.0, 1 - r * 2.2) ** 2 * 0.6  # a soft core
+            a = min(1.0, ray * fade + glow)
+            px[x, y] = (255, 255, 255, int(255 * a))
+    img.filter(ImageFilter.GaussianBlur(1.5)).save(path)
+
+
+
+def lightning(path):
+    """A jagged lightning bolt with a soft glow, white on transparent so the game tints it (the 100x treadmill's
+    lightning streaks, 2026-10-08). Runs top to bottom, so a particle can stretch it along its length."""
+    import random
+    rng = random.Random(7)
+    w, h, k = 128, 512, 2
+    img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    pts, x = [], w * k / 2
+    steps = 14
+    for i in range(steps + 1):
+        y = h * k * i / steps
+        pts.append((x, y))
+        x = w * k / 2 + rng.uniform(-0.32, 0.32) * w * k
+    branch_from = pts[5]
+    branch = [branch_from, (branch_from[0] + 0.25 * w * k, branch_from[1] + 0.12 * h * k),
+              (branch_from[0] + 0.15 * w * k, branch_from[1] + 0.22 * h * k)]
+    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    gd.line(pts, fill=(255, 255, 255, 140), width=18 * k, joint="curve")
+    gd.line(branch, fill=(255, 255, 255, 110), width=12 * k, joint="curve")
+    glow = glow.filter(ImageFilter.GaussianBlur(10 * k))
+    d.line(pts, fill=(255, 255, 255, 255), width=4 * k, joint="curve")
+    d.line(branch, fill=(255, 255, 255, 230), width=3 * k, joint="curve")
+    glow.alpha_composite(img)
+    glow.resize((w, h), Image.LANCZOS).save(path)
+
+
 if __name__ == "__main__":
     petal("assets/textures/petal.png")
     sparkle("assets/textures/sparkle.png")
@@ -135,3 +188,5 @@ if __name__ == "__main__":
     glow_ring("assets/textures/glow_ring.png")
     glow_wall("assets/textures/glow_wall.png")
     streak("assets/textures/streak.png")
+    sun_rays("assets/textures/sun_rays.png")
+    lightning("assets/textures/lightning.png")

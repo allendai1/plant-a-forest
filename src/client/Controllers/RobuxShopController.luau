@@ -3,7 +3,7 @@
 -- 2026-10-07). Everything in it costs Robux, on three tabs:
 -- - Boosts: "BOOST Server Training!" (2x training for everyone for a while) and the Strength and Speed boost
 --   pass ladders.
--- - Characters: the Park Ranger and the Lord of the Forest (GameConfig.HandsPasses: faster picking up and planting,
+-- - Characters: the Forest Ranger and the Lord of the Forest (GameConfig.HandsPasses: faster picking up and planting,
 --   and the outfit), each a card with a turning 3D preview (Assets.Outfits.<Outfit>Preview, made by
 --   OutfitService).
 -- - Stations: the training station passes.
@@ -467,7 +467,7 @@ function RobuxShopController.start()
 			purchased(productId)
 		end
 	end)
-	-- The Park Ranger and Lord of the Forest NPCs by the altar sell their pass.
+	-- The Forest Ranger and Lord of the Forest NPCs by the altar sell their pass.
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		local passId = prompt:GetAttribute("PassId")
 		if player == localPlayer and typeof(passId) == "number" then

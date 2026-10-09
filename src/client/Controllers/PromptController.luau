@@ -26,7 +26,7 @@ local SCREEN_Y = 0.86 -- the pile prompt's bottom edge, as a fraction of the scr
 local SCREEN_Y_TOUCH = 0.7 -- phones: above the Forest Bar, which sits at the bottom there
 local PICKUP_POP = 1.25 -- the pile prompt bumps to this size on each pickup
 local PICKUP_SOUND_ID = "rbxassetid://140323850218372" -- Creator Store "Pop Sound Effect", 0.2 s, free
-local PICKUP_VOLUME = 0.25 -- halved: it lands on the acorn merges and read as too loud
+local PICKUP_VOLUME = 0.175 -- halved, then 30% lower (the user, 2026-10-08): it lands on the acorn merges and read as too loud
 local PICKUP_PITCH_FROM, PICKUP_PITCH_STEP, PICKUP_PITCH_MAX = 1, 0.025, 1.4 -- rises over a run of grabs
 local PICKUP_RUN_SECONDS = 0.8 -- grabs closer together than this count as one run
 

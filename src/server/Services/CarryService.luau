@@ -5,7 +5,7 @@
 -- server-side repeat every HoldRepeatSeconds; TriggerEnded (the player let go of E) stops it.
 -- Every grab re-checks reach and capacity, and grabs are never closer together than the player's pace
 -- (HoldRepeatSeconds, faster with a Hands pass), so tapping fast is no quicker than holding.
--- DropSeeds (Q) empties your hands, only inside the lobby (GameConfig.Drop).
+-- DropSeeds (Q) empties your hands, anywhere (lobby only until 2026-10-08).
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -131,25 +131,12 @@ local function hookRack(rack: Instance)
 	end
 end
 
--- Is the player inside the lobby (within Drop.LobbyRadiusStuds of the hub center, flat)?
-local function inLobby(player: Player): boolean
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local state = ReplicatedStorage:FindFirstChild("ForestState")
-	local center = state and state:GetAttribute("Center")
-	if not (root and root:IsA("BasePart") and typeof(center) == "Vector3") then
-		return false
-	end
-	local offset = root.Position - center
-	return Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Drop.LobbyRadiusStuds
-end
-
 local function onDrop(player: Player)
 	local rate = GameConfig.Drop.Rate
 	if not Guard.allow(player, "DropSeeds", rate.PerSecond, rate.Burst) then
 		return
 	end
-	if CarryService.get(player) > 0 and inLobby(player) then
+	if CarryService.get(player) > 0 then
 		local holder = holders[player]
 		if holder then
 			holder.holding = false -- a held grab at the dispenser stops too

@@ -10,8 +10,8 @@
 -- target and repeats every HoldRepeatSeconds (faster with a Hands pass) while held. While a ProximityPrompt is showing (the rack
 -- or a bench), E is left to the prompt.
 -- A special seed in hand (SeedBagController, docs/plans/SeedShop.md) is planted first with PlantSpecial.
--- While you carry seeds in the lobby, a "Q Drop Seeds" button shows under the pick-up prompt: Q, the gamepad Y
--- button or a tap on it drops them all (DropSeeds; the server checks you're in the lobby, GameConfig.Drop).
+-- While you carry seeds, a "Q Drop Seeds" button shows under the pick-up prompt: Q, the gamepad Y button or a tap
+-- on it drops them all (DropSeeds), anywhere (2026-10-08, the user's call; it was lobby only).
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -24,6 +24,7 @@ local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
 local Remotes = require(Shared.Remotes)
 local SeedBagController = require(script.Parent.SeedBagController)
+local Sounds = require(script.Parent.Parent.Sounds)
 local TargetController = require(script.Parent.TargetController)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
@@ -40,6 +41,8 @@ local PLANT_ACTION = "Plant"
 local DROP_ACTION = "DropSeeds"
 local DROP_SCREEN_Y = 0.97 -- the drop button's bottom edge, under the pick-up prompt (PromptController, 0.86)
 local DROP_HEIGHT = 56
+local PICKUP_HEIGHT = 86 -- PromptController's prompt (HEIGHT), before the screen scale
+local PICKUP_HALF_WIDTH = 158 -- half of "Pick Up Seeds" there: 30 + 62 key + 14 + 180 text + 30, halved
 local DIMMED = 0.6 -- mobile plant button transparency with nothing to plant
 
 type Piece = { part: BasePart, rel: CFrame, size: Vector3 }
@@ -222,6 +225,18 @@ local function watchPlayer(player: Player)
 	end
 end
 
+-- A soft step into the soil on your own plant press (2026-10-08, the user's ask), only for you. The pitch wanders a
+-- little so a held E doesn't sound like one clip on repeat, and PLANT_SOUND_GAP keeps a fast streak from piling up.
+local PLANT_SOUND_GAP = 0.12
+local lastPlantSound = 0
+local function plantSound()
+	local now = os.clock()
+	if now - lastPlantSound >= PLANT_SOUND_GAP then
+		lastPlantSound = now
+		Sounds.play("Plant", 0.9 + math.random() * 0.2)
+	end
+end
+
 local function tryPlant()
 	local target = TargetController.getTarget()
 	local held = SeedBagController.held()
@@ -230,12 +245,14 @@ local function tryPlant()
 			Remotes.event("PlantSpecial"):FireServer(held, target.q, target.r)
 			TargetController.notePlanted(target)
 			SeedBagController.setHeld(nil)
+			plantSound()
 		end
 		return
 	end
 	if target and carriedOf(Players.LocalPlayer) > 0 then
 		Remotes.event("PlantSeeds"):FireServer(target.q, target.r)
 		TargetController.notePlanted(target) -- the guide arrow leads back here next trip
+		plantSound()
 	end
 end
 
@@ -289,8 +306,9 @@ local function bindPlanting()
 		if not (button and jump and jump:IsA("GuiObject") and frame and frame:IsA("GuiObject")) then
 			return
 		end
-		local spot = jump.AbsolutePosition
-			+ Vector2.new(-(button.AbsoluteSize.X + 14), (jump.AbsoluteSize.Y - button.AbsoluteSize.Y) / 2)
+		-- Up and to the left of the jump button, where the right thumb rests (2026-10-08, the user's ask; it was level
+		-- with the jump button, too low).
+		local spot = jump.AbsolutePosition + Vector2.new(-button.AbsoluteSize.X * 0.75, -(button.AbsoluteSize.Y + 12))
 		ContextActionService:SetPosition(
 			PLANT_ACTION,
 			UDim2.fromOffset(spot.X - frame.AbsolutePosition.X, spot.Y - frame.AbsolutePosition.Y)
@@ -338,20 +356,7 @@ local function bindPlanting()
 	end)
 end
 
--- Is the local player inside the lobby (GameConfig.Drop.LobbyRadiusStuds of the hub center)? The server
--- checks the same before it drops anything.
-local function inLobby(): boolean
-	local character = Players.LocalPlayer.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local center = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("Center")
-	if not (root and root:IsA("BasePart") and typeof(center) == "Vector3") then
-		return false
-	end
-	local offset = root.Position - center
-	return Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Drop.LobbyRadiusStuds
-end
-
--- The "Q Drop Seeds" button: the prompts' dark panel with a key box, shown while you carry seeds in the lobby.
+-- The "Q Drop Seeds" button: the prompts' dark panel with a key box, shown while you carry seeds.
 local function bindDropping()
 	local drop = Remotes.event("DropSeeds")
 	local screen = Instance.new("ScreenGui")
@@ -359,13 +364,23 @@ local function bindDropping()
 	screen.ResetOnSpawn = false
 	screen.Enabled = false
 	local scale = UIStyle.screenScale()
+	local touch = UIStyle.isTouch()
 	local panel = Instance.new("TextButton")
 	panel.Name = "Drop"
 	panel.Text = ""
 	panel.AutoButtonColor = false
-	panel.AnchorPoint = Vector2.new(0.5, 1)
-	panel.Position = UDim2.fromScale(0.5, DROP_SCREEN_Y)
-	panel.Size = UDim2.fromOffset(0, DROP_HEIGHT)
+	if touch then
+		-- Phones: a plain "Drop" button right of the pick-up prompt, the same height (2026-10-08, the user's ask; it
+		-- was a "TAP Drop Seeds" bar at the bottom). PromptController draws that prompt centered with its bottom at
+		-- SCREEN_Y_TOUCH (0.7), about PICKUP_HALF_WIDTH wide each side of the middle, PICKUP_HEIGHT tall.
+		panel.AnchorPoint = Vector2.new(0, 0.5)
+		panel.Position = UDim2.new(0.5, (PICKUP_HALF_WIDTH + 14) * scale, 0.7, -PICKUP_HEIGHT / 2 * scale)
+		panel.Size = UDim2.fromOffset(0, PICKUP_HEIGHT)
+	else
+		panel.AnchorPoint = Vector2.new(0.5, 1)
+		panel.Position = UDim2.fromScale(0.5, DROP_SCREEN_Y)
+		panel.Size = UDim2.fromOffset(0, DROP_HEIGHT)
+	end
 	panel.AutomaticSize = Enum.AutomaticSize.X
 	panel.BackgroundColor3 = Color3.fromRGB(28, 22, 16)
 	panel.BackgroundTransparency = 0.2
@@ -373,27 +388,32 @@ local function bindDropping()
 	local fit = Instance.new("UIScale")
 	fit.Scale = scale
 	fit.Parent = panel
-	UIStyle.corner(panel, DROP_HEIGHT // 2 - 6)
+	local height = if touch then PICKUP_HEIGHT else DROP_HEIGHT
+	UIStyle.corner(panel, height // 2 - 6)
 	UIStyle.stroke(panel, 3, UIStyle.BLACK, true)
 	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 18), UDim.new(0, 22)
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, if touch then 26 else 18), UDim.new(0, if touch then 26 else 22)
 	pad.Parent = panel
 	UIStyle.list(panel, true, 12)
-	local key = Instance.new("Frame")
-	key.Size = UDim2.fromOffset(DROP_HEIGHT - 14, DROP_HEIGHT - 14)
-	key.BackgroundColor3 = Color3.fromRGB(12, 10, 8)
-	key.Parent = panel
-	UIStyle.corner(key, 10)
-	local letter = UIStyle.text(key, if UIStyle.isTouch() then "TAP" else "Q", if UIStyle.isTouch() then 16 else 28)
-	letter.AnchorPoint = Vector2.new(0.5, 0.5)
-	letter.Position = UDim2.fromScale(0.5, 0.5)
-	local words = UIStyle.text(panel, "Drop Seeds", 26)
-	words.LayoutOrder = 2
+	if touch then
+		UIStyle.text(panel, "Drop", 32)
+	else
+		local key = Instance.new("Frame")
+		key.Size = UDim2.fromOffset(DROP_HEIGHT - 14, DROP_HEIGHT - 14)
+		key.BackgroundColor3 = Color3.fromRGB(12, 10, 8)
+		key.Parent = panel
+		UIStyle.corner(key, 10)
+		local letter = UIStyle.text(key, "Q", 28)
+		letter.AnchorPoint = Vector2.new(0.5, 0.5)
+		letter.Position = UDim2.fromScale(0.5, 0.5)
+		local words = UIStyle.text(panel, "Drop Seeds", 26)
+		words.LayoutOrder = 2
+	end
 	UIStyle.clicky(panel)
 	screen.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 	local function dropNow()
-		if carriedOf(Players.LocalPlayer) > 0 and inLobby() then
+		if carriedOf(Players.LocalPlayer) > 0 then
 			drop:FireServer()
 		end
 	end
@@ -405,10 +425,10 @@ local function bindDropping()
 		end
 		return Enum.ContextActionResult.Sink
 	end
-	-- Shown (and Q bound) only while you carry seeds inside the lobby; checked a few times a second.
+	-- Shown (and Q bound) only while you carry seeds; checked a few times a second.
 	task.spawn(function()
 		while true do
-			local show = carriedOf(Players.LocalPlayer) > 0 and inLobby()
+			local show = carriedOf(Players.LocalPlayer) > 0
 			screen.Enabled = show
 			if show ~= bound then
 				bound = show

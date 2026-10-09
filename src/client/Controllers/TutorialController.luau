@@ -234,7 +234,7 @@ local function buildGui(): (TextLabel, TextButton)
 	hintHolder.BackgroundTransparency = 1
 	hintHolder.Parent = gui
 	UIStyle.autoScale(hintHolder)
-	local prompt = UIStyle.text(hintHolder, "", 38, Color3.fromRGB(120, 200, 255))
+	local prompt = UIStyle.text(hintHolder, "", 38, UIStyle.WHITE) -- white (the user, 2026-10-08; was light blue)
 	prompt.Name = "Prompt"
 	prompt.Visible = false
 
@@ -345,6 +345,23 @@ function TutorialController.start()
 		return "Tip: train to carry more and walk faster", spot
 	end
 
+	-- Shows or hides the gift board on this client (parts, label, glowing circle).
+	local function showGift(board: Instance, on: boolean)
+		if board:GetAttribute("Shown") == on then
+			return
+		end
+		board:SetAttribute("Shown", on)
+		for _, item in board:GetDescendants() do
+			if item:IsA("BasePart") then
+				item.LocalTransparencyModifier = if on then 0 else 1
+			elseif item:IsA("LayerCollector") then
+				item.Enabled = on
+			elseif item:IsA("Beam") then
+				item.Enabled = on
+			end
+		end
+	end
+
 	-- The gift board's E prompt (GiftPrompt) opens the Favorite prompt; it's hidden once the gift is claimed.
 	game:GetService("ProximityPromptService").PromptTriggered:Connect(function(triggered)
 		if CollectionService:HasTag(triggered, "GiftPrompt") and attribute("FreeGiftClaimed") == 0 then
@@ -359,6 +376,12 @@ function TutorialController.start()
 		for _, giftPrompt in CollectionService:GetTagged("GiftPrompt") do
 			if giftPrompt:IsA("ProximityPrompt") then
 				giftPrompt.Enabled = claimed == 0
+				-- The whole gift (box, board, label and its glowing circle) disappears for a player who has claimed it,
+				-- now or on an earlier visit (2026-10-08, the user's ask). Local only: others still see theirs.
+				local board = giftPrompt:FindFirstAncestorWhichIsA("Model")
+				if board then
+					showGift(board, claimed == 0)
+				end
 			end
 		end
 		local character = localPlayer.Character

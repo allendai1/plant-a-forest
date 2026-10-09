@@ -240,17 +240,15 @@ export type HandsPass = {
 	Outfit: string,
 	Pitch: string,
 	Feature: string?,
-	Aura: Color3?, -- the glow around the character's NPC in the lobby (OutfitService)
 }
 GameConfig.HandsPasses = {
 	{
 		Multiplier = 2,
 		PassId = 2014628378,
-		Name = "Park Ranger",
-		Title = "a Park Ranger",
+		Name = "Forest Ranger", -- was "Park Ranger" (renamed 2026-10-08, the user's call)
+		Title = "a Forest Ranger",
 		Outfit = "Ranger",
 		Pitch = "2x faster pickup and planting",
-		Aura = Color3.fromRGB(110, 255, 80), -- a bright green glow (lime, so it shows on the green uniform) (the user's ask, 2026-10-08, like a sun god's golden one)
 	}, -- 99 Robux
 	{
 		Multiplier = 5, -- was 3 until 2026-10-07 (the user's call)
@@ -311,9 +309,10 @@ function GameConfig.rankFor(forests: number): Rank
 end
 
 GameConfig.Leaderboards = {
-	Stats = { "Strength", "Speed", "ForestsCompleted" },
-	Titles = { Strength = "Top Strength", Speed = "Top Speed", ForestsCompleted = "Most Forests" },
-	Size = 50,
+	-- Strength, lifetime seeds planted and Speed since 2026-10-08 (the user's call; was Most Forests in the middle).
+	Stats = { "Strength", "SeedsPlanted", "Speed" },
+	Titles = { Strength = "Top Strength", SeedsPlanted = "Top Seeds", Speed = "Top Speed" },
+	Size = 100, -- the top 100 players (the user's call, 2026-10-08; was 50; GetSortedAsync allows at most 100)
 	WriteSeconds = 120,
 	ReadSeconds = 120,
 }
@@ -399,10 +398,8 @@ GameConfig.WalkCap = {
 	Rate = { PerSecond = 8, Burst = 8 }, -- SetWalkCap rate limit per player
 }
 
--- Dropping the seeds you carry (Q, 2026-10-08, the user's ask): only inside the lobby, so nobody empties their
--- hands in the forest by mistake. The lobby is everything within LobbyRadiusStuds of the hub center (the fence).
+-- Dropping the seeds you carry (Q, 2026-10-08, the user's ask), anywhere (it was lobby only at first, the same day).
 GameConfig.Drop = {
-	LobbyRadiusStuds = 150,
 	Rate = { PerSecond = 2, Burst = 3 }, -- DropSeeds rate limit per player
 }
 

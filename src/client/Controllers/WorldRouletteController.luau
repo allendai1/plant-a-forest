@@ -237,21 +237,14 @@ local function build(): ScreenGui
 	return gui
 end
 
--- "Kyoto Forest · 2x coins" under the Forest Bar in a bonus world; nothing in a normal (1x) world
--- (the user's call, 2026-10-07).
+-- "Kyoto Forest · 2x coins" in a bonus world, nothing in a normal (1x) world (the user's call, 2026-10-07). It's a
+-- line in the HUD's top group, under the Forest Bar's buttons (above them on phones, where the group sits at the
+-- bottom), so it stays with the bar instead of floating mid-screen (2026-10-08, the user's ask).
 local function buildWorldLabel()
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "WorldLabel"
-	gui.ResetOnSpawn = false
-	local touch = UIStyle.isTouch()
-	local holder = Instance.new("Frame")
-	holder.BackgroundTransparency = 1
-	holder.AutomaticSize = Enum.AutomaticSize.XY
-	holder.AnchorPoint = Vector2.new(0.5, 0)
-	holder.Position = if touch then UDim2.new(0.5, 0, 0, 6) else UDim2.new(0.5, 0, 0, 168)
-	holder.Parent = gui
-	UIStyle.autoScale(holder)
-	local label = UIStyle.text(holder, "", 26)
+	local top = localPlayer:WaitForChild("PlayerGui"):WaitForChild("HUD"):WaitForChild("Top")
+	local label = UIStyle.text(top, "", 26)
+	label.Name = "WorldLabel"
+	label.LayoutOrder = if UIStyle.isTouch() then -4 else 6
 	local function refresh()
 		local index = math.max(1, attribute("TierId"))
 		local tier = GameConfig.Tiers[index]
@@ -263,12 +256,11 @@ local function buildWorldLabel()
 	end
 	forestState:GetAttributeChangedSignal("TierId"):Connect(refresh)
 	refresh()
-	gui.Parent = localPlayer:WaitForChild("PlayerGui")
 end
 
 function WorldRouletteController.start()
 	forestState = ReplicatedStorage:WaitForChild("ForestState")
-	buildWorldLabel()
+	task.spawn(buildWorldLabel) -- waits for the HUD
 	local gui = build()
 	forestState:GetAttributeChangedSignal("TierRolls"):Connect(function()
 		local winner = attribute("NextTier")

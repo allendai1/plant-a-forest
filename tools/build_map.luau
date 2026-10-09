@@ -15,6 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local GlowRing = require(ReplicatedStorage.Shared.GlowRing)
 -- The HUD's look helpers (font, outlined text with a shadow, icons), for the map's signs (GUI pass).
 local UIStyle = (require :: any)(game:GetService("StarterPlayer").StarterPlayerScripts.Client.UIStyle)
 
@@ -493,6 +494,17 @@ hub.Position = Vector3.new(C.X, GROUND - 0.05, C.Z)
 place(Lobby.LobbyPlaza, CFrame.new(C))
 place(Lobby.LobbyGarden, CFrame.new(C))
 local fence = place(Lobby.LobbyFence, CFrame.new(C))
+-- The Ancient Spring's edge (the boost area during the break): a gold glowing ring around the World Tree at
+-- Awakening.SpringRadiusStuds (2026-10-08, the user's ask: the area wasn't clear). GlowRingController shows it only
+-- during the break (BreakOnly).
+do
+	local across = 2 * GameConfig.Awakening.SpringRadiusStuds
+	local ring = block("SpringRing", Vector3.new(across, 0.2, across), CFrame.new(C + Vector3.new(0, 0.15, 0)), lobby)
+	ring.Color = Color3.fromRGB(255, 210, 80)
+	ring.CanCollide, ring.CanQuery, ring.CanTouch = false, false, false
+	local fx = GlowRing.build(ring)
+	fx:SetAttribute("BreakOnly", true)
+end
 
 -- Lights at the trail openings. The fence doesn't collide anywhere (the user's request, 2026-10-07: it
 -- used to have invisible walls), so players walk straight through it.
@@ -520,10 +532,32 @@ for k = 0, 5 do
 	local stones = path:FindFirstChild("LobbyPath_Stone") :: BasePart
 	stones.CanCollide, stones.CanQuery = true, true
 	-- A grout bed under the pavers, above the tiles' raised edges, so those don't show through the joints.
-	local bed = block("PathBed", Vector3.new(stones.Size.X, 0.2, stones.Size.Z), stones.CFrame, path)
-	bed.CFrame = stones.CFrame - Vector3.new(0, stones.CFrame.Y - (TILE_TOP + 0.15), 0) -- top 1.85: over the 1.75 edges, under every paver top
+	-- It reaches down to the ground (2026-10-08, the user's ask: the trail looked like it floated over the grass
+	-- between the plaza and the forest), so the trail reads as a solid raised walkway. Top 1.85: over the tiles'
+	-- 1.75 edges, under every paver top.
+	local bedTop = TILE_TOP + 0.25
+	local bed = block("PathBed", Vector3.new(stones.Size.X, bedTop - GROUND, stones.Size.Z), stones.CFrame, path)
+	bed.CFrame = stones.CFrame - Vector3.new(0, stones.CFrame.Y - (GROUND + bed.Size.Y / 2), 0)
 	bed.Color, bed.Material = Color3.fromRGB(120, 112, 100), Enum.Material.SmoothPlastic
 	bed.CanCollide, bed.CanQuery, bed.CanTouch = false, false, false
+	-- A short ramp from the plaza's pavers up onto the trail's raised start, at the gate.
+	local outward = Vector3.new(stones.CFrame.RightVector.X, 0, stones.CFrame.RightVector.Z).Unit
+	local middle = Vector3.new(stones.Position.X - C.X, 0, stones.Position.Z - C.Z)
+	if outward:Dot(middle) < 0 then
+		outward = -outward
+	end
+	local innerEnd = Vector3.new(C.X, 0, C.Z) + middle - outward * (stones.Size.X / 2)
+	local plazaTop = GROUND + 0.3
+	local rise = (stones.Position.Y + stones.Size.Y / 2) - plazaTop
+	local RAMP_LENGTH = 7
+	local ramp = Instance.new("WedgePart")
+	ramp.Name = "PathRamp"
+	ramp.Size = Vector3.new(stones.Size.Z, rise, RAMP_LENGTH)
+	local rampMiddle = innerEnd - outward * (RAMP_LENGTH / 2) + Vector3.new(0, plazaTop + rise / 2, 0)
+	ramp.CFrame = CFrame.lookAt(rampMiddle, rampMiddle - outward) -- a wedge is tall at its back (+Z): toward the trail
+	ramp.Anchored = true
+	ramp.Color, ramp.Material = COLORS.Paver[1], COLORS.Paver[2]
+	ramp.Parent = path
 end
 -- Bushes and rocks in the grass between the round fence and the hexagonal first ring of plots.
 if Lobby:FindFirstChild("FenceDecor") then
@@ -631,7 +665,7 @@ end
 -- found the old small circle in front didn't match the ring, 2026-10-07). The stone altar keeps the small ring ahead.
 local stationGlow = altar:FindFirstChild("RangerStation_Glow") :: BasePart?
 if stationGlow then
-	CollectionService:AddTag(stationGlow, "GlowRing") -- drawn as a soft spinning ring (GlowRingController)
+	GlowRing.build(stationGlow) -- the soft glowing ring, built into the place (Shared/GlowRing)
 end
 local zone = block(
 	"ShopZone",
@@ -649,7 +683,7 @@ zone.Shape = Enum.PartType.Cylinder
 zone.Transparency, zone.CanCollide, zone.CanQuery = 1, false, false
 CollectionService:AddTag(zone, "ShopZone")
 
--- The Park Ranger and Lord of the Forest NPCs, one on either side of the shop ring, facing it, each standing on
+-- The Forest Ranger and Lord of the Forest NPCs, one on either side of the shop ring, facing it, each standing on
 -- a round platform like a display stand (rebuilt every run). Like the shopkeeper the NPCs live in Workspace.Map and
 -- are only made when missing, so the user can dress them in Studio. Tagged CharacterNpc (OutfitService adds the pass
 -- prompt, name label and shop preview) and IdleNpc.
@@ -763,7 +797,7 @@ for i, angle in RACK_ANGLES do
 				part.Transparency = if marker then 1 else part.Transparency
 				part.CastShadow = not marker and part.Name ~= "AcornDispenser_Glow" -- the ring on the ground (2026-10-08)
 				if part.Name == "AcornDispenser_Glow" then
-					CollectionService:AddTag(part, "GlowRing") -- drawn as a soft spinning ring (GlowRingController)
+					GlowRing.build(part) -- the soft glowing ring, built into the place (Shared/GlowRing)
 				end
 			end
 		end
@@ -1053,25 +1087,32 @@ for index, tier in TIERS do
 	edge.Anchored, edge.CanCollide, edge.CanQuery, edge.CanTouch = true, false, false, false
 	edge.Parent = pad
 	tierEffects(edge, tier.color, index - 1)
+	local ringFx = GlowRing.build(edge) -- the soft glowing ring in place of the hard edge (2026-10-08, the user's ask)
+	if m == 100 then
+		ringFx:SetAttribute("Rainbow", true) -- cycles through the rainbow (GlowRingController)
+	end
 	local gui = Instance.new("BillboardGui")
-	gui.Size = UDim2.fromOffset(230, 56) -- room for "Requirements: 100" and its icon
-	gui.StudsOffsetWorldSpace = Vector3.new(0, 9, 0)
+	gui.Size = UDim2.fromOffset(270, 64) -- room for "Requirements: 100" and its icon (bigger since 2026-10-08)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, 13, 0) -- 13 since 2026-10-08 (was 9; the user wanted it higher)
 	gui.MaxDistance = 120
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.fromScale(1, 0.62)
+	title.Size = UDim2.fromScale(1, 0.58)
 	title.BackgroundTransparency = 1
 	title.Font = Enum.Font.FredokaOne
 	title.TextScaled = true
 	title.TextColor3 = tier.color
 	title.TextStrokeTransparency = 0.2
 	title.Text = `{m}x`
+	if m == 100 then
+		title:SetAttribute("Rainbow", true) -- a rainbow sweeps through it (RainbowTextController, 2026-10-08)
+	end
 	title.Parent = gui
 	-- "Requirements: 25 (tree icon)": the forests needed (a game pass unlocks it too, via the locked popup).
 	local needed = GameConfig.forestsForMultiplier(m) or 0
 	local line = Instance.new("Frame")
 	line.Name = "Requirement"
-	line.Position = UDim2.fromScale(0, 0.62)
-	line.Size = UDim2.fromScale(1, 0.38)
+	line.Position = UDim2.fromScale(0, 0.58)
+	line.Size = UDim2.fromScale(1, 0.42)
 	line.BackgroundTransparency = 1
 	line.Parent = gui
 	local row = Instance.new("UIListLayout")
@@ -1084,7 +1125,7 @@ for index, tier in TIERS do
 	local sub = Instance.new("TextLabel")
 	sub.BackgroundTransparency = 1
 	sub.Font = Enum.Font.FredokaOne
-	sub.TextSize = 17
+	sub.TextSize = 23 -- was 17 (the user wanted it larger, 2026-10-08)
 	sub.Size = UDim2.fromScale(0, 1)
 	sub.AutomaticSize = Enum.AutomaticSize.X
 	sub.TextColor3 = Color3.new(1, 1, 1)
@@ -1094,11 +1135,12 @@ for index, tier in TIERS do
 		local icon = Instance.new("ImageLabel")
 		icon.LayoutOrder = 2
 		icon.BackgroundTransparency = 1
-		icon.Size = UDim2.fromOffset(20, 20)
+		icon.Size = UDim2.fromOffset(26, 26)
 		icon.Image = UIStyle.Icons.Forests.Image
 		icon.Parent = line
 	end
-	UIStyle.band(gui)
+	-- A slimmer dark band than the other signs': less room above and below (the user's call, 2026-10-08).
+	UIStyle.band(gui).Size = UDim2.fromScale(0.8, 1.15)
 	gui.Parent = edge -- not the floor: its rotation would tip the sign's offset sideways
 
 	local bench = grove:FindFirstChild(`Bench Press {m}x`) :: Model
@@ -1371,6 +1413,15 @@ local giftGlow = gift:FindFirstChild("GiftBoard_Glow")
 if giftGlow then
 	giftGlow:Destroy()
 end
+-- A soft pink glowing circle around it (2026-10-08, the user's ask; just a look, the E prompt opens it). Inside the
+-- gift's model, so TutorialController hides it along with the gift once that player has claimed it.
+do
+	local box = gift:FindFirstChild("GiftBoard_Box") :: BasePart
+	local ring = block("GiftRing", Vector3.new(10, 0.2, 10), CFrame.new(box.Position.X, GROUND + 0.35, box.Position.Z), gift)
+	ring.Color = Color3.fromRGB(255, 110, 170)
+	ring.CanCollide, ring.CanQuery, ring.CanTouch = false, false, false
+	GlowRing.build(ring)
+end
 local giftPrompt = Instance.new("ProximityPrompt")
 giftPrompt.ActionText, giftPrompt.ObjectText = "Claim Free Gift", ""
 giftPrompt.Style = Enum.ProximityPromptStyle.Custom -- drawn by PromptController
@@ -1458,7 +1509,7 @@ end
 -- facing the tree. Each Board part is tagged LeaderboardBoard with its Stat; LeaderboardController draws the
 -- top players on its front face (LeaderboardService publishes them).
 local BOARD_R = 135
-local BOARDS = { { stat = "Strength", angle = 315 }, { stat = "ForestsCompleted", angle = 330 }, { stat = "Speed", angle = 345 } }
+local BOARDS = { { stat = "Strength", angle = 315 }, { stat = "SeedsPlanted", angle = 330 }, { stat = "Speed", angle = 345 } }
 local BOARD_WOOD = Color3.fromRGB(110, 74, 46)
 local boards = Instance.new("Model")
 boards.Name = "Leaderboards"

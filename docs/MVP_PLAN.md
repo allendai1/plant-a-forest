@@ -131,10 +131,10 @@ Done when: screenshots match the references, everything still works, and Studio 
 
 ## M12. Performance pass (moved after the art pass, 2026-10-06)
 
-- [ ] Full forest of 540 trees and their tiles on a test server with StreamingEnabled
+- [x] Full forest of 540 trees and their tiles on a test server with StreamingEnabled (60 fps in Studio at max quality, 2026-10-08)
 - [ ] Measure memory, frame time and network traffic on a low-end device or emulator
 - [ ] Fix the worst offenders before adding more visuals
-- [ ] Studio at maximum graphics quality with a full forest and the break: 15 fps after the art pass (see `docs/plans/M11.md`)
+- [x] Studio at maximum graphics quality with a full forest and the break: 60 fps (2026-10-08; the old 15 fps was Studio's background-window cap)
 
 Done when: a full forest runs smoothly on mobile.
 

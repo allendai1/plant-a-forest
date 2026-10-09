@@ -480,6 +480,33 @@ end
 local BAND_WIDTH = 0.8 -- of the sign's width, centered (1 was a bit long)
 local BAND_HEIGHT = 1.6 -- of the sign's height, centered: room above and below the text (1 was tight)
 local BAND_DARKEST = 0.75 -- transparency in the middle (0 = solid black; 0.35, then 0.6, were too dark)
+-- The animated rainbow (2026-10-08): six colors, and rainbowSequence(phase) is the whole rainbow across a gradient,
+-- turned by `phase` (0..1, wrapping). Animate a UIGradient by setting its Color to this with a growing phase: the
+-- colors cycle in place. (Sliding the gradient's Offset instead showed a long stretch of one end color past the edge.)
+UIStyle.RAINBOW = {
+	Color3.fromRGB(255, 80, 120),
+	Color3.fromRGB(255, 170, 60),
+	Color3.fromRGB(255, 240, 80),
+	Color3.fromRGB(110, 255, 120),
+	Color3.fromRGB(80, 190, 255),
+	Color3.fromRGB(190, 110, 255),
+}
+function UIStyle.rainbowAt(t: number): Color3
+	local colors = UIStyle.RAINBOW
+	local x = (t % 1) * #colors
+	local i = math.floor(x)
+	return colors[i + 1]:Lerp(colors[(i + 1) % #colors + 1], x - i)
+end
+local RAINBOW_KEYS = 12
+function UIStyle.rainbowSequence(phase: number): ColorSequence
+	local keys = {}
+	for k = 0, RAINBOW_KEYS do
+		local along = k / RAINBOW_KEYS
+		table.insert(keys, ColorSequenceKeypoint.new(along, UIStyle.rainbowAt(along - phase)))
+	end
+	return ColorSequence.new(keys)
+end
+
 function UIStyle.band(parent: Instance): Frame
 	local band = Instance.new("Frame")
 	band.Name = "Band"

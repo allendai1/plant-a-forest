@@ -21,6 +21,7 @@ local ICONS: { [string]: UIStyle.Icon } = {
 	Strength = UIStyle.Icons.Strength,
 	Speed = UIStyle.Icons.Speed,
 	ForestsCompleted = UIStyle.Icons.Forests,
+	SeedsPlanted = UIStyle.Icons.BulkPlant, -- the planting icon
 }
 
 type Entry = { id: number, name: string, value: number }
@@ -38,6 +39,25 @@ local function entries(stat: string): { Entry }
 	end
 	local ok, list = pcall(HttpService.JSONDecode, HttpService, value.Value)
 	return if ok and typeof(list) == "table" then list else {}
+end
+
+local VALUE_ROOM = 96 -- pixels kept free for the value at a row's right end (rows are ~330 px wide)
+local AVATAR_X = 66 -- the headshot's left edge, after the rank
+
+-- A player name that stops short of the value, cut off with "..." when it's long (UIStyle's outlined text draws a
+-- Face and a Shadow copy; each is cut the same way).
+local function nameLabel(row: Frame, text: string, left: number, color: Color3?): TextLabel
+	local label = UIStyle.text(row, text, 26, color)
+	label.AutomaticSize = Enum.AutomaticSize.None
+	label.Position = UDim2.fromOffset(left, 13)
+	label.Size = UDim2.new(1, -(left + VALUE_ROOM), 0, 26)
+	for _, item in { label :: Instance, unpack(label:GetChildren()) } do
+		if item:IsA("TextLabel") then
+			item.TextXAlignment = Enum.TextXAlignment.Left
+			item.TextTruncate = Enum.TextTruncate.AtEnd
+		end
+	end
+	return label
 end
 
 local function fill(scroll: ScrollingFrame, stat: string)
@@ -66,8 +86,20 @@ local function fill(scroll: ScrollingFrame, stat: string)
 		local color = PLACE_COLORS[rank] or UIStyle.WHITE
 		local place = UIStyle.text(row, `#{rank}`, 32, color)
 		place.Position = UDim2.fromOffset(10, 9)
-		local name = UIStyle.text(row, entry.name, 30, color)
-		name.Position = UDim2.fromOffset(84, 11)
+		-- Their avatar's headshot right of the rank (2026-10-08, the user's ask); Roblox serves it by user id.
+		local face = Instance.new("ImageLabel")
+		face.Name = "Avatar"
+		face.BackgroundColor3 = Color3.fromRGB(30, 24, 18)
+		face.BackgroundTransparency = 0.3
+		face.Image = `rbxthumb://type=AvatarHeadShot&id={entry.id}&w=48&h=48`
+		face.AnchorPoint = Vector2.new(0, 0.5)
+		face.Position = UDim2.new(0, AVATAR_X, 0.5, 0)
+		face.Size = UDim2.fromOffset(ROW - 10, ROW - 10)
+		face.Parent = row
+		local round = Instance.new("UICorner")
+		round.CornerRadius = UDim.new(0.5, 0)
+		round.Parent = face
+		nameLabel(row, entry.name, AVATAR_X + ROW - 2, color)
 		local value = UIStyle.text(row, UIStyle.short(entry.value), 32, color)
 		value.AnchorPoint = Vector2.new(1, 0)
 		value.Position = UDim2.new(1, -12, 0, 9)
@@ -98,7 +130,7 @@ local function draw(board: BasePart)
 	UIStyle.text(title, GameConfig.Leaderboards.Titles[stat] or stat, 58, UIStyle.GOLD).LayoutOrder = 2
 	local scroll = Instance.new("ScrollingFrame")
 	scroll.Position = UDim2.fromOffset(16, 96)
-	scroll.Size = UDim2.new(1, -32, 1, -112)
+	scroll.Size = UDim2.new(1, -32, 1, -112 - ROW - 8) -- room for your own place at the bottom
 	scroll.BackgroundTransparency = 1
 	scroll.BorderSizePixel = 0
 	scroll.ScrollBarThickness = 10
@@ -106,17 +138,61 @@ local function draw(board: BasePart)
 	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	scroll.Parent = surface
 	UIStyle.list(scroll, false, 4).VerticalAlignment = Enum.VerticalAlignment.Top
+	-- Your own place, always at the bottom (2026-10-08, the user's ask): your rank on this board, or #100+ when
+	-- you're not in the top Size, with your avatar, name and current value.
+	local mine = Instance.new("Frame")
+	mine.Name = "You"
+	mine.AnchorPoint = Vector2.new(0, 1)
+	mine.Position = UDim2.new(0, 16, 1, -12)
+	mine.Size = UDim2.new(1, -42, 0, ROW)
+	mine.BackgroundColor3 = MINE
+	mine.BackgroundTransparency = 0.1
+	mine.Parent = surface
+	UIStyle.corner(mine, 8)
+	local place = UIStyle.text(mine, "", 32)
+	place.Position = UDim2.fromOffset(10, 9)
+	local face = Instance.new("ImageLabel")
+	face.BackgroundColor3 = Color3.fromRGB(30, 24, 18)
+	face.BackgroundTransparency = 0.3
+	face.Image = `rbxthumb://type=AvatarHeadShot&id={localPlayer.UserId}&w=48&h=48`
+	face.AnchorPoint = Vector2.new(0, 0.5)
+	face.Position = UDim2.new(0, AVATAR_X + 22, 0.5, 0) -- room for "#100+"
+	face.Size = UDim2.fromOffset(ROW - 10, ROW - 10)
+	face.Parent = mine
+	local round = Instance.new("UICorner")
+	round.CornerRadius = UDim.new(0.5, 0)
+	round.Parent = face
+	nameLabel(mine, localPlayer.DisplayName, AVATAR_X + 20 + ROW)
+	local amount = UIStyle.text(mine, "", 32)
+	amount.AnchorPoint = Vector2.new(1, 0)
+	amount.Position = UDim2.new(1, -12, 0, 9)
+	local function showMine()
+		local rank: number? = nil
+		for i, entry in entries(stat) do
+			if entry.id == localPlayer.UserId then
+				rank = i
+				break
+			end
+		end
+		place.Text = if rank then `#{rank}` else `#{GameConfig.Leaderboards.Size}+`
+		local value = localPlayer:GetAttribute(stat)
+		amount.Text = UIStyle.short(if typeof(value) == "number" then value else 0)
+	end
 	surface.Parent = localPlayer:WaitForChild("PlayerGui")
 	drawn[board] = surface
 	fill(scroll, stat)
+	showMine()
 	local folder = ReplicatedStorage:WaitForChild("Leaderboards")
 	local value = folder:WaitForChild(stat) :: StringValue
 	local connection = value.Changed:Connect(function()
 		fill(scroll, stat)
+		showMine()
 	end)
+	local mineConnection = localPlayer:GetAttributeChangedSignal(stat):Connect(showMine)
 	board.AncestryChanged:Connect(function()
 		if not board:IsDescendantOf(workspace) then
 			connection:Disconnect()
+			mineConnection:Disconnect()
 			surface:Destroy()
 			drawn[board] = nil
 		end

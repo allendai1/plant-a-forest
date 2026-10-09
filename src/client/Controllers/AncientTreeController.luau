@@ -16,8 +16,11 @@
 -- Kyoto's AncientSakura1-4, a bonsai-like cherry blossom with falling petals and pink sparkles from its crown
 -- and a pink glow; the Great Smoky Mountains' AncientMaple1-4, a giant maple dropping orange leaves with an
 -- amber glow (VARIANT_LOOK). When the world changes, the swap waits for the tree to shrink to a sapling.
+-- Standing in the spring circle (within SpringRadiusStuds of the trunk) fades the tree (not its base) to see-through for you
+-- (2026-10-08, the user's ask), so it doesn't fill your screen; it uses LocalTransparencyModifier, so it's only local.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
@@ -91,6 +94,9 @@ local PETAL_TEXTURE = "rbxassetid://130093552340519" -- the shop Cherry Blossom'
 local SPARKLE_TEXTURE = "rbxassetid://88252539838654"
 local PETAL_RATE = { 3, 40 } -- per second, from the sapling to full grown
 local SWAP_WAIT_SECONDS = 4 -- a world change waits this long at most for the tree to shrink first
+local INSIDE_FADE = 0.75 -- how see-through the tree gets while you stand in the spring circle (1 = invisible)
+local INSIDE_HEIGHT = 30 -- the circle counts up to this far above the hub center (TrainingService SPRING_HEIGHT)
+local FADE_RATE = 6 -- how fast the fade follows you in and out (higher is quicker)
 
 local AncientTreeController = {}
 
@@ -115,11 +121,12 @@ local labelAnchor: Part? = nil -- the World Tree label hangs on this
 local function setup(model: Model)
 	for _, part in model:GetDescendants() do
 		if part:IsA("BasePart") then
-			local bark = string.find(part.Name, "_Bark") ~= nil
 			part.Anchored = true
 			part.CanTouch = false
-			part.CanCollide = bark -- the trunk is solid; leaves, glow and the base decoration aren't
-			part.CanQuery = bark -- the camera ignores the canopy
+			-- Nothing is solid, the trunk and roots included: players walk right into the tree (2026-10-08, the
+			-- user's call; the trunk used to collide). The camera ignores it too.
+			part.CanCollide = false
+			part.CanQuery = false
 		end
 	end
 end
@@ -469,6 +476,34 @@ function AncientTreeController.build(base: Vector3)
 		end)
 	end)
 	folder.Parent = workspace
+
+	-- See-through while you're in the spring circle (the tree only; its base and rune circle on the ground stay).
+	local fade = 0
+	local faded: { [Model]: number } = {}
+	RunService.Heartbeat:Connect(function(dt: number)
+		local character = Players.LocalPlayer.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		local inside = false
+		if rootPart and rootPart:IsA("BasePart") then
+			local offset = rootPart.Position - root.Position
+			inside = Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Awakening.SpringRadiusStuds
+				and offset.Y <= INSIDE_HEIGHT
+		end
+		local goal = if inside then INSIDE_FADE else 0
+		fade += (goal - fade) * math.min(1, dt * FADE_RATE)
+		if math.abs(goal - fade) < 0.005 then
+			fade = goal
+		end
+		local model = shown
+		if model and faded[model] ~= fade then
+			faded[model] = fade
+			for _, part in model:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.LocalTransparencyModifier = fade
+				end
+			end
+		end
+	end)
 end
 
 return AncientTreeController

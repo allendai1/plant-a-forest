@@ -1,121 +1,111 @@
 --!strict
--- GlowRingController: the soft glowing ground rings (2026-10-08, like Build the Pyramid's): every part tagged
--- GlowRing (the shop's and the acorn dispensers' neon ring meshes, tagged by tools/build_map.luau) is hidden on this
--- client and drawn instead as a blurred ring texture lying on the ground in the part's color, turning slowly, a low
--- glowing wall standing on it (four curved Beams whose fading, streaky texture scrolls around the ring). The rising
--- streaks were removed on 2026-10-08 (the user's call: just the swirl). Only rings near the camera spin. Visual only.
+-- GlowRingController: turns the glowing ground rings (Shared/GlowRing builds them into the place, so they're visible
+-- and editable in Studio). Each GlowRingFx part's ground texture (Ground.Glow) spins slowly while it's near the
+-- camera; the walls' Beams scroll by themselves. A ring with the BreakOnly attribute (the Ancient Spring's) shows only
+-- during the break after a forest (ForestState AwakeningEndsAt > 0). One with the Rainbow attribute (the 100x pad's,
+-- 2026-10-08) cycles through the rainbow: a rainbow sweeps across its ground glow, and the colors flow around its
+-- wall. Visual only.
 
 local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local TAG = "GlowRing"
-local TEXTURE = "rbxassetid://139917524501692" -- tools/make_particle_textures.py glow_ring (decal 89571232641592)
-local TEXTURE_CENTER = 0.72 -- the band's middle in the texture, as a fraction of its half-width (GLOW_RING_CENTER)
-local LIFT = 0.12 -- studs above the ring mesh's middle, so the glow sits on the ground without flickering
-local SPIN = 18 -- degrees per second
-local BRIGHTNESS = 2.5
-local NEAR_STUDS = 220 -- rings farther from the camera than this stop spinning
-local WALL_TEXTURE = "rbxassetid://111090819332847" -- glow_wall (decal 103636328548536): opaque foot, clear top
-local WALL_HEIGHT = 1.5 -- studs (was 2.2; a little shorter, the user asked 2026-10-08)
-local WALL_SPEED = 0.35 -- how fast the wall's streaks scroll around the ring (Beam.TextureSpeed)
-local WALL_FLIP = true -- the beams' width axis points down, which puts the texture's bright edge at the foot
-local CURVE = 0.5523 -- Bezier handle length per radius for a quarter circle
+local GlowRing = require(ReplicatedStorage.Shared.GlowRing)
+local UIStyle = require(script.Parent.Parent.UIStyle)
 
-type Ring = { glow: Part, image: ImageLabel }
+local SPIN = 18 -- degrees per second
+local NEAR_STUDS = 220 -- rings farther from the camera than this stop spinning
+local RAINBOW_SPEED = 0.5 -- turns of the rainbow per second
+local WALL_KEYS = 6 -- color keypoints along each quarter of the wall
 
 local GlowRingController = {}
 
-local rings: { [BasePart]: Ring } = {}
-local folder: Folder
+local rings: { [Instance]: ImageLabel } = {}
+type Rainbow = { gradient: UIGradient, walls: { Beam } }
+local rainbows: { [Instance]: Rainbow } = {}
+local breakOn = false
 
-local function add(source: Instance)
-	if not source:IsA("BasePart") or rings[source] or not source:IsDescendantOf(workspace) then
-		return
+-- Shows or hides a ring's glow and walls.
+local function show(fx: Instance, on: boolean)
+	for _, item in fx:GetDescendants() do
+		-- selene: allow(if_same_then_else) -- separate branches keep each type narrowed for luau-lsp
+		if item:IsA("SurfaceGui") then
+			item.Enabled = on
+		elseif item:IsA("Beam") then
+			item.Enabled = on
+		end
 	end
-	source.LocalTransparencyModifier = 1 -- the soft ring replaces the hard neon mesh
-	local across = source.Size.X -- the mesh's outer diameter; the band's middle is just inside it
-	local bandRadius = across / 2 * 0.97
-	local glowAcross = 2 * bandRadius / TEXTURE_CENTER
-
-	local glow = Instance.new("Part")
-	glow.Name = "GlowRing"
-	glow.Anchored, glow.CanCollide, glow.CanQuery, glow.CanTouch, glow.CastShadow = true, false, false, false, false
-	glow.Transparency = 1
-	glow.Size = Vector3.new(glowAcross, 0.05, glowAcross)
-	glow.CFrame = CFrame.new(source.Position + Vector3.new(0, LIFT, 0))
-	glow.Parent = folder
-	local surface = Instance.new("SurfaceGui")
-	surface.Face = Enum.NormalId.Top
-	surface.LightInfluence = 0
-	surface.Brightness = BRIGHTNESS
-	surface.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-	surface.CanvasSize = Vector2.new(512, 512)
-	surface.Parent = glow
-	local image = Instance.new("ImageLabel")
-	image.BackgroundTransparency = 1
-	image.Size = UDim2.fromScale(1, 1)
-	image.Image = TEXTURE
-	image.ImageColor3 = source.Color
-	image.Parent = surface
-
-	-- The wall: four quarter-circle Beams around the band, each attachment's X along the ring (the curve's handles)
-	-- and Y up (the ribbon's width), so the ribbon stands upright.
-	local corners: { Attachment } = {}
-	for i = 0, 3 do
-		local a = math.rad(90 * i)
-		local corner = Instance.new("Attachment")
-		corner.CFrame = CFrame.fromMatrix(
-			Vector3.new(math.cos(a) * bandRadius, WALL_HEIGHT / 2, math.sin(a) * bandRadius),
-			Vector3.new(-math.sin(a), 0, math.cos(a)),
-			if WALL_FLIP then -Vector3.yAxis else Vector3.yAxis
-		)
-		corner.Parent = glow
-		corners[i + 1] = corner
-	end
-	for i = 1, 4 do
-		local beam = Instance.new("Beam")
-		beam.Attachment0, beam.Attachment1 = corners[i], corners[i % 4 + 1]
-		beam.CurveSize0, beam.CurveSize1 = CURVE * bandRadius, CURVE * bandRadius
-		beam.FaceCamera = false
-		beam.Width0, beam.Width1 = WALL_HEIGHT, WALL_HEIGHT
-		beam.Segments = 16
-		beam.Texture = WALL_TEXTURE
-		beam.TextureMode = Enum.TextureMode.Wrap
-		beam.TextureLength = 2 * math.pi * bandRadius / 8 -- the texture repeats 8 times around the ring
-		beam.TextureSpeed = WALL_SPEED
-		beam.Color = ColorSequence.new(source.Color)
-		beam.LightEmission, beam.LightInfluence = 1, 0
-		beam.Brightness = 2.5
-		beam.Parent = glow
-	end
-
-	rings[source] = { glow = glow, image = image }
 end
 
-local function remove(source: Instance)
-	local ring = rings[source :: BasePart]
-	if ring then
-		ring.glow:Destroy()
-		rings[source :: BasePart] = nil
+local function add(fx: Instance)
+	local image = fx:FindFirstChild("Glow", true)
+	if fx:IsA("BasePart") and image and image:IsA("ImageLabel") then
+		rings[fx] = image
+		if fx:GetAttribute("Rainbow") then
+			image.ImageColor3 = Color3.new(1, 1, 1)
+			local gradient = image:FindFirstChildOfClass("UIGradient") or Instance.new("UIGradient")
+			gradient.Color = UIStyle.rainbowSequence(0)
+			gradient.Parent = image
+			-- The walls, in order around the ring (Wall1..Wall4, each a quarter).
+			local walls: { Beam } = {}
+			for i = 1, 4 do
+				for _, item in fx:GetChildren() do
+					if item:IsA("Beam") and item.Name == `Wall{i}` then
+						walls[i] = item
+					end
+				end
+			end
+			rainbows[fx] = { gradient = gradient, walls = walls }
+		end
+		if fx:GetAttribute("BreakOnly") then
+			show(fx, breakOn)
+		end
 	end
 end
 
 function GlowRingController.start()
-	folder = Instance.new("Folder")
-	folder.Name = "GlowRings"
-	folder.Parent = workspace
-	for _, source in CollectionService:GetTagged(TAG) do
-		add(source)
+	local forestState = ReplicatedStorage:WaitForChild("ForestState")
+	local function onBreak()
+		local endsAt = forestState:GetAttribute("AwakeningEndsAt")
+		breakOn = typeof(endsAt) == "number" and endsAt > 0
+		for fx in rings do
+			if fx:GetAttribute("BreakOnly") then
+				show(fx, breakOn)
+			end
+		end
 	end
-	CollectionService:GetInstanceAddedSignal(TAG):Connect(add)
-	CollectionService:GetInstanceRemovedSignal(TAG):Connect(remove)
+	forestState:GetAttributeChangedSignal("AwakeningEndsAt"):Connect(onBreak)
+	onBreak()
+	for _, fx in CollectionService:GetTagged(GlowRing.TAG) do
+		add(fx)
+	end
+	CollectionService:GetInstanceAddedSignal(GlowRing.TAG):Connect(add) -- streamed back in, too
+	CollectionService:GetInstanceRemovedSignal(GlowRing.TAG):Connect(function(fx)
+		rings[fx] = nil
+		rainbows[fx] = nil
+	end)
 	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
 		local eye = if camera then camera.CFrame.Position else Vector3.zero
-		local angle = os.clock() * SPIN % 360
-		for _, ring in rings do
-			if (ring.glow.Position - eye).Magnitude <= NEAR_STUDS then
-				ring.image.Rotation = angle
+		local now = os.clock()
+		local angle = now * SPIN % 360
+		local turn = now * RAINBOW_SPEED
+		for fx, image in rings do
+			if ((fx :: BasePart).Position - eye).Magnitude > NEAR_STUDS then
+				continue
+			end
+			image.Rotation = angle
+			local rainbow = rainbows[fx]
+			if rainbow then
+				rainbow.gradient.Color = UIStyle.rainbowSequence(turn)
+				for i, wall in rainbow.walls do
+					local keys = {}
+					for k = 0, WALL_KEYS - 1 do
+						local along = k / (WALL_KEYS - 1)
+						table.insert(keys, ColorSequenceKeypoint.new(along, UIStyle.rainbowAt((i - 1 + along) / 4 - turn)))
+					end
+					wall.Color = ColorSequence.new(keys)
+				end
 			end
 		end
 	end)

@@ -658,10 +658,8 @@ local function ringComplete(ring: number, opening: { Plot })
 		local grid = GameConfig.Grid
 		local outer = grid.HubRings + grid.ForestRings
 		local number = if outsideInNow() then outer - ring + 1 else ring - grid.HubRings
-		local rings = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("RingCount")
-		HUD.banner(
-			`Ring {number} of {if typeof(rings) == "number" then rings else grid.ForestRings} complete! Next: the glowing ring`
-		)
+		HUD.banner(`Ring {number} complete!`) -- just that (the user's call, 2026-10-08)
+		HUD.confetti()
 	end)
 end
 

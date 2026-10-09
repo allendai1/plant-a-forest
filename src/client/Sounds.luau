@@ -11,14 +11,17 @@ local Sounds = {}
 -- name = { id, volume, pitch? } (pitch: playback speed, 1 = as recorded; lower is deeper)
 Sounds.IDS = {
 	Click = { "rbxassetid://15675059323", 0.5 }, -- "Roblox_UI_Bright_Click" (Roblox)
-	Hover = { "rbxassetid://139800881181209", 0.25 }, -- "ui-simple-button-hover" (AmbientSorcery)
+	Hover = { "rbxassetid://119354387183704", 0.25 }, -- the user's pick 2026-10-08 (was 139800881181209, "ui-simple-button-hover")
 	Purchase = { "rbxassetid://10066947742", 0.6 }, -- "RBLX UI Purchase (SFX)" (Roblox)
 	Error = { "rbxassetid://87519554692663", 0.5 }, -- "ui-simple-negative-error" (AmbientSorcery)
 	LevelUp = { "rbxassetid://112485797063762", 0.5 }, -- "UI - Level Up" (SodaBreadle)
 	Notify = { "rbxassetid://104000340117740", 0.5 }, -- "Notification Chime" (Flare Studio)
-	Fanfare = { "rbxassetid://9047103106", 0.5 }, -- "All It Takes Sting 2" (APM Music), the forest is complete
-	StatUp = { "rbxassetid://76834925120308", 0.5 }, -- the user's pick: capacity or walk speed leveled up (HUD)
-	Gain = { "rbxassetid://121434237134952", 0.35, 1 }, -- pitch 1 measured to match the clip (average 727 vs 722 Hz, ~40 ms long); -- "bubble-pop-06" (artem1323323): the training pop, with each "+N" popup (HUD). Picked 2026-10-07 to match Build the Pyramid's (a ~40 ms pop sliding up from ~530 to ~1,060 Hz; this one slides 600 -> 900). Was 10066931761. Close alternatives: 109359226723492, 86707910685850.
+	Fanfare = { "rbxassetid://136993031050456", 0.5 }, -- "SuccessSfx" (proxyprevails, 1.1 s): the tutorial is complete; the user's pick 2026-10-08 (was 9047103106)
+	-- The forest is complete: "Where Dreams Come True (B)" (APM Music), 12.4 s; the user's pick 2026-10-08 (was Fanfare).
+	ForestComplete = { "rbxassetid://1840544226", 0.5 },
+	StatUp = { "rbxassetid://112485797063762", 0.5 }, -- capacity or walk speed leveled up (HUD); the user's pick 2026-10-08 (was 76834925120308)
+	Plant = { "rbxassetid://110522236020035", 0.5 }, -- "footstep grass 3" (Robloxmastermanyay): your own seed going into the ground (CarryController); the user's pick 2026-10-08
+	Gain = { "rbxassetid://121434237134952", 0.28, 1 }, -- volume 0.28 (was 0.35; 20% down, the user 2026-10-08); pitch 1 measured to match the clip (average 727 vs 722 Hz, ~40 ms long); -- "bubble-pop-06" (artem1323323): the training pop, with each "+N" popup (HUD). Picked 2026-10-07 to match Build the Pyramid's (a ~40 ms pop sliding up from ~530 to ~1,060 Hz; this one slides 600 -> 900). Was 10066931761. Close alternatives: 109359226723492, 86707910685850.
 } :: { [string]: { any } }
 
 local function group(name: string, volume: number): SoundGroup

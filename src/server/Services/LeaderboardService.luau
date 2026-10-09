@@ -4,7 +4,7 @@
 --   values are written every WriteSeconds (only when changed) and when they leave; the top Size are read every
 --   ReadSeconds and published as JSON in ReplicatedStorage.Leaderboards.<Stat> (a StringValue:
 --   [{ id, name, value }]). LeaderboardController draws them on the lobby boards.
--- - In-server: a leaderstats folder (Strength, Forests) so Roblox's player list shows and sorts them.
+-- - In-server: a leaderstats folder (Strength, Seeds, Speed) so Roblox's player list shows and sorts them.
 -- Studio play sessions use their own stores (suffix _Studio), like DataService.
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -18,7 +18,12 @@ local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 
 local SUFFIX = if RunService:IsStudio() then "_Studio" else ""
 -- The player list's columns: attribute -> column name (the first one sorts the list).
-local PLAYER_LIST = { { attribute = "Strength", name = "Strength" }, { attribute = "ForestsCompleted", name = "Forests" } }
+-- Strength, Seeds (lifetime seeds planted) and Speed since 2026-10-08, like the lobby boards (was Strength, Forests).
+local PLAYER_LIST = {
+	{ attribute = "Strength", name = "Strength" },
+	{ attribute = "SeedsPlanted", name = "Seeds" },
+	{ attribute = "Speed", name = "Speed" },
+}
 
 type Entry = { id: number, name: string, value: number }
 

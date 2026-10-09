@@ -1,7 +1,7 @@
 --!strict
 -- HUD: the on-screen readouts, laid out after Build the Pyramid's (docs/plans/M5.md, GUI.md).
 -- Top: the Forest Bar (Seeds / Target from ForestState), the four Robux buttons that buy seeds for it,
--- the server training boost timer and the "Full!" hint.
+-- the server training boost timer.
 -- Left: coins (with "+N" pops; rises close together are merged into one pop), Speed with walk speed,
 -- Strength with capacity, forests completed. Right: the Robux SHOP button and the Strength and Speed
 -- boost pass buttons (each sells the next pass up), then Settings and Codes side by side. Bottom left: the
@@ -55,6 +55,17 @@ local COIN_STREAK_SECONDS = 1.5
 local COIN_STREAK_STEP = 0.04
 local COIN_STREAK_MAX = 8
 local BANNER_SECONDS = 3
+-- Confetti over the whole screen when a ring is complete (2026-10-08, the user's ask).
+local CONFETTI_COUNT = 90
+local CONFETTI_SECONDS = { 2.2, 3.6 } -- how long a piece takes to fall the screen's height
+local CONFETTI_COLORS = {
+	Color3.fromRGB(255, 90, 90),
+	Color3.fromRGB(255, 200, 60),
+	Color3.fromRGB(120, 230, 90),
+	Color3.fromRGB(80, 190, 255),
+	Color3.fromRGB(200, 120, 255),
+	Color3.fromRGB(255, 140, 210),
+}
 local REFRESH_SECONDS = 0.25
 local BAR_COLORS = { UIStyle.Colors.Green, UIStyle.Colors.Orange, UIStyle.Colors.Red, UIStyle.Colors.Purple }
 local STRENGTH_HEX = "#ffa030"
@@ -139,6 +150,43 @@ function HUD.banner(text: string, color: Color3?)
 			banner.Visible = false
 		end
 	end)
+end
+
+-- A shower of confetti falling over the whole screen: small colored pieces that tumble and drift as they fall,
+-- in their own ScreenGui above everything (Hide UI doesn't hide it), each gone once it's off the bottom.
+local confettiGui: ScreenGui? = nil
+local confettiRng = Random.new()
+function HUD.confetti()
+	local gui = confettiGui
+	if not gui then
+		local made = Instance.new("ScreenGui")
+		made.Name = "Confetti"
+		made.IgnoreGuiInset = true
+		made.ResetOnSpawn = false
+		made.DisplayOrder = 20
+		made.Parent = localPlayer:WaitForChild("PlayerGui")
+		confettiGui = made
+		gui = made
+	end
+	local screen = gui :: ScreenGui
+	for _ = 1, CONFETTI_COUNT do
+		local piece = Instance.new("Frame")
+		piece.BorderSizePixel = 0
+		piece.BackgroundColor3 = CONFETTI_COLORS[confettiRng:NextInteger(1, #CONFETTI_COLORS)]
+		piece.AnchorPoint = Vector2.new(0.5, 0.5)
+		piece.Size = UDim2.fromOffset(confettiRng:NextInteger(7, 11), confettiRng:NextInteger(12, 18))
+		local x = confettiRng:NextNumber()
+		piece.Position = UDim2.fromScale(x, -confettiRng:NextNumber(0.02, 0.5)) -- staggered above the top
+		piece.Rotation = confettiRng:NextNumber(0, 360)
+		piece.Parent = screen
+		local seconds = confettiRng:NextNumber(CONFETTI_SECONDS[1], CONFETTI_SECONDS[2])
+		local fall = TweenInfo.new(seconds, Enum.EasingStyle.Linear)
+		TweenService:Create(piece, fall, {
+			Position = UDim2.fromScale(x + confettiRng:NextNumber(-0.12, 0.12), 1.08),
+			Rotation = piece.Rotation + confettiRng:NextNumber(-720, 720),
+		}):Play()
+		Debris:AddItem(piece, seconds + 0.1)
+	end
 end
 
 function HUD.setVisible(on: boolean)
@@ -332,7 +380,7 @@ local function buildBanner(gui: ScreenGui)
 	bannerLabel = banner
 end
 
--- The top: Forest Bar, bar buttons, server boost timer, "Full!" hint.
+-- The top: Forest Bar, bar buttons, server boost timer.
 local function buildTop(gui: ScreenGui)
 	local forestState = ReplicatedStorage:WaitForChild("ForestState")
 	local top = group(gui, "Top")
@@ -360,7 +408,7 @@ local function buildTop(gui: ScreenGui)
 	bar.LayoutOrder = if touch then 5 else 1
 	bar.Parent = top
 	UIStyle.corner(bar, 16)
-	UIStyle.stroke(bar, 5, nil, true)
+	UIStyle.stroke(bar, 7, nil, true) -- 7 since 2026-10-08 (was 5; the user wanted it a bit thicker)
 	local scale = Instance.new("UIScale")
 	scale.Parent = bar
 	barScale = scale
@@ -644,10 +692,6 @@ local function buildTop(gui: ScreenGui)
 	boostTimer.Name = "ServerBoost"
 	boostTimer.LayoutOrder = if touch then -1 else 3
 	boostTimer.Visible = false
-	local full = UIStyle.text(top, "Full! Go plant.", 30, Color3.fromRGB(255, 170, 60))
-	full.Name = "Full"
-	full.LayoutOrder = if touch then -2 else 4
-	full.Visible = false
 
 	-- Forest credit: until you've put ForestCreditSeeds acorns into this forest, a line says how many more.
 	local needed = GameConfig.Stats.ForestCreditSeeds
@@ -670,14 +714,6 @@ local function buildTop(gui: ScreenGui)
 	localPlayer:GetAttributeChangedSignal("TutorialStep"):Connect(refreshCredit)
 	forestState:GetAttributeChangedSignal("AwakeningEndsAt"):Connect(refreshCredit)
 	refreshCredit()
-
-	local function refreshFull()
-		local carried = attribute(localPlayer, "Carried")
-		full.Visible = carried > 0 and carried >= GameConfig.capacity(attribute(localPlayer, "Strength"))
-	end
-	localPlayer:GetAttributeChangedSignal("Carried"):Connect(refreshFull)
-	localPlayer:GetAttributeChangedSignal("Strength"):Connect(refreshFull)
-	refreshFull()
 
 	-- Banners for everyone when someone buys seeds or the server boost.
 	forestState:GetAttributeChangedSignal("BarBoosts"):Connect(function()
@@ -734,14 +770,26 @@ local function setSub(value: TextLabel, words: string, text: string)
 	value.Text = text
 end
 
--- Under the Walk Speed line: a small button that opens the walk speed limit in Settings (the line itself
--- does too). The - / + / MAX buttons moved there (2026-10-07).
+-- Right after the Walk Speed line: a small edit icon that opens the walk speed limit in Settings (the line itself
+-- does too). It replaced a "Speed limit" button under the line (2026-10-08, the user's ask).
+local EDIT_ICON = "rbxassetid://76019418992436" -- the user's pick (2026-10-08)
 local function walkSetting(walk: TextLabel)
 	local line = walk.Parent :: Instance -- the "Walk Speed: 179" row (words and value)
-	local button = UIStyle.button(line.Parent :: Instance, "Speed limit", UIStyle.Colors.Blue, UDim2.fromOffset(120, 26), 16)
+	local gap = Instance.new("Frame") -- some room between the numbers and the icon
+	gap.Name = "Gap"
+	gap.BackgroundTransparency = 1
+	gap.Size = UDim2.fromOffset(8, 1)
+	gap.LayoutOrder = 3
+	gap.Parent = line
+	local button = Instance.new("ImageButton")
 	button.Name = "WalkSetting"
-	button.LayoutOrder = 3
-	button.Activated:Connect(SettingsController.open)
+	button.LayoutOrder = 4
+	button.BackgroundTransparency = 1
+	button.Image = EDIT_ICON
+	button.Size = UDim2.fromOffset(22, 22)
+	button.Parent = line
+	UIStyle.clicky(button)
+	button.Activated:Connect(SettingsController.toggle) -- clicking again closes it
 	local toggle = Instance.new("TextButton")
 	toggle.Name = "Toggle"
 	toggle.BackgroundTransparency = 1
@@ -749,7 +797,7 @@ local function walkSetting(walk: TextLabel)
 	toggle.Size = UDim2.fromScale(1, 1)
 	toggle.ZIndex = 5
 	toggle.Parent = walk
-	toggle.Activated:Connect(SettingsController.open)
+	toggle.Activated:Connect(SettingsController.toggle)
 end
 
 local function buildLeft(gui: Frame)
@@ -816,7 +864,7 @@ local function buildLeft(gui: Frame)
 		if walk and capacity then
 			local earned = math.round(GameConfig.walkSpeed(attribute(localPlayer, "Speed")))
 			local cap = attribute(localPlayer, "WalkCap")
-			setSub(walk, "Walk Speed: ", if cap > 0 and cap < earned then `{cap} (max {earned})` else `{earned}`)
+			setSub(walk, "Walk Speed: ", if cap > 0 and cap < earned then `{cap}/{earned}` else `{earned}`)
 			setSub(
 				capacity,
 				"Capacity: ",
@@ -1016,7 +1064,7 @@ local function buildBreak(gui: Frame)
 	bottom.Visible = false
 	UIStyle.autoScale(bottom)
 	UIStyle.list(bottom, false, 10, Enum.HorizontalAlignment.Center)
-	local spring = UIStyle.text(bottom, "", 32, Color3.fromRGB(110, 240, 220))
+	local spring = UIStyle.text(bottom, "", 32, Color3.fromRGB(255, 210, 80)) -- gold, like the spring's ring
 	spring.Name = "Spring"
 	spring.LayoutOrder = 1
 	local row = group(bottom, "Row")
@@ -1036,8 +1084,12 @@ local function buildBreak(gui: Frame)
 				.. (if picked then `: {picked.Name}` else "")
 				.. `  ({math.ceil(left / 60)}/{GameConfig.Awakening.MaxBreakMinutes} MIN)`
 		end
-		spring.Visible = running and localPlayer:GetAttribute("InSpring") == true
-		spring.Text = `Ancient Spring {forestState:GetAttribute("SpringMultiplier")}x: Strength and Speed`
+		-- The spring's multiplier shows the whole break (2026-10-08; it used to show only inside the circle).
+		local multiplier = attribute(forestState, "SpringMultiplier")
+		spring.Visible = running and multiplier > 0
+		spring.Text = if localPlayer:GetAttribute("InSpring") == true
+			then `{multiplier}x boost: Strength and Speed`
+			else `{multiplier}x boost by the World Tree`
 	end
 	forestState:GetAttributeChangedSignal("Extensions"):Connect(function()
 		local by = forestState:GetAttribute("ExtendedBy")

@@ -1,9 +1,11 @@
 --!strict
--- OutfitService: the Park Ranger and Lord of the Forest characters (polish pass, 2026-10-07). Owners of a Hands pass
+-- OutfitService: the Forest Ranger and Lord of the Forest characters (polish pass, 2026-10-07). Owners of a Hands pass
 -- (PassService's HandsSpeed attribute) wear that character's accessories, cloned from
 -- ReplicatedStorage.Assets.Outfits.<Outfit> (GameConfig.HandsPasses), on every spawn and as soon as they buy.
 -- Only the best owned outfit is worn. The outfit's Shirt and Pants (catalog clothing) replace the player's own.
 -- Everything put on is tagged so it can be swapped.
+-- The character's aura too (2026-10-08): every ParticleEmitter named Aura... (Aura, AuraOutline) on its NPC (the green water aura on the
+-- Forest Ranger, set up and edited in Studio) is copied onto the same body part of the owner's character.
 -- An NPC of each character (a model in Workspace.Map, dressed in Studio) stands by the upgrade shop's ring with a
 -- prompt that sells its pass, and a copy goes to Assets.Outfits.<Outfit>Preview for the Robux shop's character cards.
 
@@ -15,6 +17,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 
 local TAG = "Outfit"
+local AURA_TAG = "OutfitAura"
 local STASH = "OwnClothes"
 
 local OutfitService = {}
@@ -28,6 +31,26 @@ local function outfitFor(player: Player): string?
 		end
 	end
 	return best
+end
+
+-- Copies the aura emitters (named Aura..., like Aura and its dark AuraOutline) from the character's NPC onto the same
+-- body parts of `character`.
+local function wearAura(character: Model, outfit: string)
+	for _, npc in CollectionService:GetTagged("CharacterNpc") do
+		if npc:GetAttribute("Outfit") ~= outfit then
+			continue
+		end
+		for _, emitter in npc:GetDescendants() do
+			local part = emitter.Parent
+			local target = part and character:FindFirstChild(part.Name)
+			if emitter:IsA("ParticleEmitter") and emitter.Name:match("^Aura") and target and target:IsA("BasePart") then
+				local copy = emitter:Clone()
+				copy:SetAttribute("Outfit", outfit)
+				CollectionService:AddTag(copy, AURA_TAG)
+				copy.Parent = target
+			end
+		end
+	end
 end
 
 local function dress(player: Player)
@@ -50,9 +73,15 @@ local function dress(player: Player)
 			end
 		end
 	end
+	for _, emitter in CollectionService:GetTagged(AURA_TAG) do
+		if emitter:IsDescendantOf(character) then
+			emitter:Destroy() -- put back fresh below, so it always matches the NPC's
+		end
+	end
 	if not want then
 		return
 	end
+	wearAura(character, want)
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	local outfits = assets and assets:FindFirstChild("Outfits")
 	local outfit = outfits and outfits:FindFirstChild(want)
@@ -99,67 +128,9 @@ function OutfitService.init()
 	end
 end
 
--- A glowing aura on an NPC (2026-10-08, the user's ask, like a sun god's): soft flames licking up off the torso,
--- arms and legs in the pass's Aura color, a few rising sparks, and a light on the ground around it.
-local AURA_PARTS =
-	{ "UpperTorso", "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm", "LeftUpperLeg", "RightUpperLeg" }
-local function addAura(rig: Model, color: Color3)
-	local light = color:Lerp(Color3.new(1, 1, 1), 0.45)
-	for _, name in AURA_PARTS do
-		local part = rig:FindFirstChild(name)
-		if not (part and part:IsA("BasePart")) then
-			continue
-		end
-		local flames = Instance.new("ParticleEmitter")
-		flames.Name = "AuraFlames"
-		flames.Texture = "rbxasset://textures/particles/fire_main.dds"
-		-- Mostly their own color: fully additive flames wash out to white in daylight.
-		flames.Color = ColorSequence.new(color:Lerp(Color3.new(1, 1, 0.6), 0.3), color)
-		flames.LightEmission, flames.LightInfluence = 0.7, 0
-		-- From the body's surface outward, so the body doesn't hide them.
-		flames.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
-		flames.ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward
-		flames.Brightness = 2
-		flames.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.6), NumberSequenceKeypoint.new(1, 0.3) })
-		flames.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.1),
-			NumberSequenceKeypoint.new(0.6, 0.45),
-			NumberSequenceKeypoint.new(1, 1),
-		})
-		flames.Lifetime = NumberRange.new(0.35, 0.7)
-		flames.Speed = NumberRange.new(1.5, 3)
-		flames.Acceleration = Vector3.new(0, 5, 0)
-		flames.Drag = 2
-		flames.Rotation = NumberRange.new(0, 360)
-		flames.RotSpeed = NumberRange.new(-90, 90)
-		flames.Rate = if name == "UpperTorso" then 45 else 20
-		flames.Parent = part
-	end
-	local torso = rig:FindFirstChild("UpperTorso")
-	if torso and torso:IsA("BasePart") then
-		local sparks = Instance.new("ParticleEmitter")
-		sparks.Name = "AuraSparks"
-		sparks.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-		sparks.Color = ColorSequence.new(light)
-		sparks.LightEmission, sparks.LightInfluence = 1, 0
-		sparks.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0) })
-		sparks.Lifetime = NumberRange.new(1, 1.6)
-		sparks.Speed = NumberRange.new(2, 4)
-		sparks.SpreadAngle = Vector2.new(60, 60)
-		sparks.Acceleration = Vector3.new(0, 2, 0)
-		sparks.Rate = 8
-		sparks.Parent = torso
-		local glow = Instance.new("PointLight")
-		glow.Name = "AuraLight"
-		glow.Color = color
-		glow.Range = 12
-		glow.Brightness = 1.5
-		glow.Parent = torso
-	end
-end
-
--- The Park Ranger and Lord of the Forest NPCs: models in Workspace.Map tagged CharacterNpc with an Outfit attribute
--- (placed by tools/build_map.luau, dressed by the user in Studio). Each gets a prompt that sells its pass (the
+-- The Forest Ranger and Lord of the Forest NPCs: models in Workspace.Map tagged CharacterNpc with an Outfit attribute
+-- (placed by tools/build_map.luau, dressed by the user in Studio; the Ranger's green aura is particle emitters and a
+-- light in the model itself, made 2026-10-08, so it can be edited in Studio). Each gets a prompt that sells its pass (the
 -- client's RobuxShopController answers prompts with a PassId attribute; CharacterDisplayController draws the price,
 -- name and boosts sign over it), and a copy goes to
 -- Assets.Outfits.<Outfit>Preview for the shop's character cards. Their pose (an idle, or the Animation attribute) is played by each client (NpcPoseController).
@@ -194,9 +165,6 @@ local function setUpNpcs()
 			end
 		end
 		local preview = rig:Clone()
-		if pass.Aura then
-			addAura(rig, pass.Aura) -- after the shop card's copy, which shows the plain outfit
-		end
 		preview.Name = `{pass.Outfit}Preview`
 		preview:PivotTo(CFrame.new())
 		CollectionService:RemoveTag(preview, "CharacterNpc")

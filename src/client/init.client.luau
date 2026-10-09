@@ -4,6 +4,19 @@
 
 type Module = { init: (() -> ())?, start: (() -> ())? }
 
+-- The GUI previews in StarterGui (tools/gui_snapshot_build.luau, for looking at in Edit mode) are copied into
+-- PlayerGui like any StarterGui item; the real GUIs are built by the controllers, so the copies go.
+local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local function dropPreview(item: Instance)
+	if item:GetAttribute("GuiPreview") then
+		item:Destroy()
+	end
+end
+playerGui.ChildAdded:Connect(dropPreview)
+for _, item in playerGui:GetChildren() do
+	dropPreview(item)
+end
+
 local children = {}
 local controllersFolder = script:FindFirstChild("Controllers")
 if controllersFolder then
