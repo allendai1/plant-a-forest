@@ -8,6 +8,7 @@ export type Snapshot = {
 	seq: number,
 	layout: { number },
 	state: { number },
+	backdrop: { number }, -- q, r, ground height per spot of the old forest outside the field (GameConfig.Field)
 }
 
 -- A batch of changed plots, sent to every client every Forest.BatchSeconds while anything changed.

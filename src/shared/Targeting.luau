@@ -48,4 +48,38 @@ function Targeting.openNear(
 	return found
 end
 
+-- Is the plot at (q, r) in `ring` open for planting? Shared by ForestService (the check) and ForestController (the
+-- glowing rims), so both agree. The open ring always is (openRing 0 = none: the forest is done). Since 2026-10-09
+-- (the user's two-rings idea) so is a plot up to `aheadRings` rings past it, once the tree just outside it (its
+-- neighbor one ring back toward the open ring) is full grown: the forest creeps on behind finished trees.
+-- `grown(q, r)` says whether the plot there is full grown (false for no plot). Full plots are never open.
+function Targeting.isOpenPlot(
+	q: number,
+	r: number,
+	ring: number,
+	full: boolean,
+	openRing: number,
+	outsideIn: boolean,
+	aheadRings: number,
+	grown: (q: number, r: number) -> boolean
+): boolean
+	if full or openRing == 0 then
+		return false
+	end
+	if ring == openRing then
+		return true
+	end
+	local step = if outsideIn then -1 else 1 -- the way the rings open
+	local ahead = (ring - openRing) * step
+	if ahead < 1 or ahead > aheadRings then
+		return false
+	end
+	for _, n in HexGrid.neighbors(q, r) do
+		if HexGrid.distance(n.q, n.r, 0, 0) == ring - step and grown(n.q, n.r) then
+			return true
+		end
+	end
+	return false
+end
+
 return Targeting

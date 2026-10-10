@@ -60,6 +60,12 @@ local function startBreak()
 	ForestController.setSway(true)
 end
 
+-- The user's wording (2026-10-08), with "Climb" once the Spring is up in the tree (2026-10-09).
+local function springText(multiplier: unknown): string
+	local verb = if GameConfig.Awakening.SpringHeightStuds > 0 then "Climb" else "Stand by"
+	return `{verb} the World Tree for a {multiplier}x boost!`
+end
+
 local function announce()
 	local multiplier = forestState:GetAttribute("SpringMultiplier")
 	if pendingCoins then
@@ -71,11 +77,11 @@ local function announce()
 		pendingCoins = nil
 		task.delay(SPRING_BANNER_DELAY, function()
 			if breakOn then
-				HUD.banner(`Stand by the World Tree for a {multiplier}x boost!`) -- the user's wording, 2026-10-08
+				HUD.banner(springText(multiplier))
 			end
 		end)
 	else
-		HUD.banner(`Stand by the World Tree for a {multiplier}x boost!`) -- the user's wording, 2026-10-08
+		HUD.banner(springText(multiplier))
 	end
 end
 

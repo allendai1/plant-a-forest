@@ -494,6 +494,8 @@ hub.Position = Vector3.new(C.X, GROUND - 0.05, C.Z)
 place(Lobby.LobbyPlaza, CFrame.new(C))
 place(Lobby.LobbyGarden, CFrame.new(C))
 local fence = place(Lobby.LobbyFence, CFrame.new(C))
+local SPRING_WALL_HEIGHT = 50 -- studs: the Ancient Spring's glowing wall
+local SPRING_WALL_TEXTURE = "rbxassetid://95604426031102" -- tools/make_particle_textures.py field_wall (decal 90102674279582)
 -- The Ancient Spring's edge (the boost area during the break): a gold glowing ring around the World Tree at
 -- Awakening.SpringRadiusStuds (2026-10-08, the user's ask: the area wasn't clear). GlowRingController shows it only
 -- during the break (BreakOnly).
@@ -502,8 +504,14 @@ do
 	local ring = block("SpringRing", Vector3.new(across, 0.2, across), CFrame.new(C + Vector3.new(0, 0.15, 0)), lobby)
 	ring.Color = Color3.fromRGB(255, 210, 80)
 	ring.CanCollide, ring.CanQuery, ring.CanTouch = false, false, false
-	local fx = GlowRing.build(ring)
+	-- A tall wall (2026-10-09, the user's ask): a field you walk into, not a line on the ground.
+	local fx = GlowRing.build(ring, SPRING_WALL_HEIGHT)
 	fx:SetAttribute("BreakOnly", true)
+	for _, beam in fx:GetChildren() do
+		if beam:IsA("Beam") then
+			beam.Texture = SPRING_WALL_TEXTURE -- smooth, without the small rings' streaks (too many lines this tall)
+		end
+	end
 end
 
 -- Lights at the trail openings. The fence doesn't collide anywhere (the user's request, 2026-10-07: it
@@ -643,7 +651,7 @@ end
 -- The shopkeeper: a plain avatar behind the counter, for the user to dress in Studio. It lives in Workspace.Map
 -- (not the rebuilt Lobby folder) and is only made when missing, so reruns keep their edits. Tagged IdleNpc:
 -- OutfitService plays an idle animation on it.
-if station and not map:FindFirstChild("Shopkeeper") then
+if station and not map:FindFirstChild("Shopkeeper", true) then -- (it now stands in the RangerStation: a Forest Ranger copy)
 	local keeper = game:GetService("Players")
 		:CreateHumanoidModelFromDescription(Instance.new("HumanoidDescription"), Enum.HumanoidRigType.R15)
 	keeper.Name = "Shopkeeper"
@@ -1262,6 +1270,36 @@ edge.Transparency = 1
 edge.CanCollide = true
 edge.Parent = map
 CollectionService:AddTag(edge, "WalkFloor")
+-- Past the island's edge (365-405 from the center) players keep running on an invisible floor instead of falling,
+-- which used to send them straight back to the spawn, quicker than walking (2026-10-08, the user's ask). A ring of
+-- EDGE_SEGMENTS slabs from EDGE_INNER out to EDGE_OUTER, just under the walk plate's top (1.55), ends in an
+-- invisible wall. Slabs, not one big part: one under the whole island would block the lower plaza and trails.
+local EDGE_INNER, EDGE_OUTER, EDGE_SEGMENTS, EDGE_WALL = 355, 650, 64, 60
+local oldRim = map:FindFirstChild("EdgeFloor")
+if oldRim then
+	oldRim:Destroy()
+end
+local rim = Instance.new("Folder")
+rim.Name = "EdgeFloor"
+local slabWidth = 2 * math.pi * EDGE_OUTER / EDGE_SEGMENTS + 4 -- covers the arc at the outer end, with overlap
+for i = 1, EDGE_SEGMENTS do
+	local turn = CFrame.new(C.X, 0, C.Z) * CFrame.Angles(0, i / EDGE_SEGMENTS * 2 * math.pi, 0)
+	local slab = Instance.new("Part")
+	slab.Name = "Slab"
+	slab.Anchored = true
+	slab.Transparency = 1
+	slab.CastShadow = false
+	slab.Size = Vector3.new(slabWidth, 1, EDGE_OUTER - EDGE_INNER)
+	slab.CFrame = turn * CFrame.new(0, 1.5 - 0.5, -(EDGE_INNER + EDGE_OUTER) / 2)
+	slab.Parent = rim
+	CollectionService:AddTag(slab, "WalkFloor")
+	local wall = slab:Clone()
+	wall.Name = "Wall"
+	wall.Size = Vector3.new(slabWidth, EDGE_WALL, 2)
+	wall.CFrame = turn * CFrame.new(0, 1.5 + EDGE_WALL / 2, -EDGE_OUTER)
+	wall.Parent = rim
+end
+rim.Parent = map
 
 local clouds = place(MapAssets.Clouds, CFrame.new(C.X, FLOOR_Y, C.Z), false, islandFolder)
 for _, part in clouds:GetDescendants() do
@@ -1444,6 +1482,61 @@ signText.Text = "FREE GIFT"
 signText.Parent = sign
 UIStyle.band(sign)
 sign.Parent = gift:FindFirstChild("GiftBoard_Box")
+-- The group gift (2026-10-08, the user's ask): a small wooden bulletin board just right of the upgrades station (seen
+-- from the plaza), facing out like the station, reading FREE GIFT. Its E prompt (GroupGiftPrompt) opens the join-group
+-- prompt (GroupGiftController); a pink glowing circle marks it. Placed in world coordinates by the station (92, -1).
+do
+	local GIFT_PINK = Color3.fromRGB(255, 110, 170)
+	local base = Vector3.new(106, GROUND, -32)
+	local face = CFrame.lookAt(base, base + Vector3.new(1, 0, 0)) -- -Z (the Front face) out toward the plaza
+	local groupGift = Instance.new("Model")
+	groupGift.Name = "GroupGiftBoard"
+	groupGift.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	local board = block("Board", Vector3.new(11, 7, 0.6), face * CFrame.new(0, 7, 0), groupGift)
+	board.Color = Color3.fromRGB(38, 30, 24)
+	for _, x in { -5.9, 5.9 } do
+		local post = block("Post", Vector3.new(0.9, 11, 0.9), face * CFrame.new(x, 5.5, 0.15), groupGift)
+		post.Material, post.Color = Enum.Material.Wood, Color3.fromRGB(110, 74, 46)
+	end
+	local cap = block("Cap", Vector3.new(13.4, 0.9, 1.6), face * CFrame.new(0, 11, 0.15), groupGift)
+	cap.Material, cap.Color = Enum.Material.Wood, Color3.fromRGB(110, 74, 46)
+	local surface = Instance.new("SurfaceGui")
+	surface.Face = Enum.NormalId.Front
+	surface.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	surface.PixelsPerStud = 40
+	surface.LightInfluence = 0
+	surface.MaxDistance = 150
+	surface.Parent = board
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromScale(0.05, 0.08)
+	title.Size = UDim2.fromScale(0.9, 0.42)
+	title.TextScaled = true
+	title.TextColor3 = Color3.fromRGB(255, 140, 190)
+	title.Text = "FREE GIFT"
+	title.Parent = surface
+	local line = Instance.new("TextLabel")
+	line.BackgroundTransparency = 1
+	line.Position = UDim2.fromScale(0.06, 0.56)
+	line.Size = UDim2.fromScale(0.88, 0.32)
+	line.TextScaled = true
+	line.TextColor3 = Color3.new(1, 1, 1)
+	line.Text = `Join our group: +{GameConfig.Economy.GroupGiftCoins} coins!`
+	line.Parent = surface
+	local ring =
+		block("GiftRing", Vector3.new(14, 0.2, 14), CFrame.new(base.X, GROUND + 0.35, base.Z) + face.LookVector * 3, groupGift)
+	ring.Color = GIFT_PINK
+	ring.CanCollide, ring.CanQuery, ring.CanTouch = false, false, false
+	GlowRing.build(ring)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText, prompt.ObjectText = "Join Group", ""
+	prompt.Style = Enum.ProximityPromptStyle.Custom -- drawn by PromptController
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = board
+	CollectionService:AddTag(prompt, "GroupGiftPrompt")
+	groupGift.Parent = lobby
+end
 
 -- The seed shop (docs/plans/SeedShop.md): a market stall where the fountain was (removed at the user's
 -- request, 2026-10-07), facing the tree, with a seed of each kind in its crates. Stepping into its ring
@@ -1505,11 +1598,16 @@ if Lobby:FindFirstChild("SeedStall") then
 	CollectionService:AddTag(ring, "SeedShopZone")
 end
 
--- Leaderboards (polish pass, 2026-10-07): three boards behind the 330 degree acorn pile, inside the fence and
--- facing the tree. Each Board part is tagged LeaderboardBoard with its Stat; LeaderboardController draws the
+-- Leaderboards (polish pass, 2026-10-07): four boards (Forests, Seeds, Strength, Speed since 2026-10-08) behind the
+-- 330 degree acorn pile, inside the fence and facing the tree. Each Board part is tagged LeaderboardBoard with its Stat; LeaderboardController draws the
 -- top players on its front face (LeaderboardService publishes them).
 local BOARD_R = 135
-local BOARDS = { { stat = "Strength", angle = 315 }, { stat = "SeedsPlanted", angle = 330 }, { stat = "Speed", angle = 345 } }
+local BOARDS = {
+	{ stat = "ForestsCompleted", angle = 312 },
+	{ stat = "SeedsPlanted", angle = 324 },
+	{ stat = "Strength", angle = 336 },
+	{ stat = "Speed", angle = 348 },
+}
 local BOARD_WOOD = Color3.fromRGB(110, 74, 46)
 local boards = Instance.new("Model")
 boards.Name = "Leaderboards"

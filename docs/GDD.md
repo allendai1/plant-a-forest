@@ -1,6 +1,6 @@
 # Plant the Forest — Game Design Doc
 
-Exported 2026-10-06 from the live design doc, then edited directly here on 2026-10-06 for the giant sequoia redesign (see `docs/DESIGN_CHANGES.md`). This file is now the master copy.
+Exported 2026-10-06 from the live design doc, then edited directly here on 2026-10-06 for the giant sequoia redesign (see [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md)). This file is now the master copy.
 
 ## Concept and pitch
 
@@ -55,7 +55,7 @@ A new player should plant their first tree within 20 seconds and understand the 
 4. **0:30, repeat.** The tutorial prompts fade after the first plant; the arrow keeps pointing to the nearest open plot whenever none is in range. After the third plant, it points to the Training Grove. Prompt: "Get stronger to carry more."
 5. **1:00, first upgrade.** Capacity rises fast at first: about 1 second on the bench press doubles it to 2 seeds, and about 12 seconds gets it to 6. The giant seed visibly grows, which teaches the core progression in one moment.
 6. **1:30, the bigger picture.** A short popup shows the free gift (like, favorite and join the group for 500 coins, given once). The upgrade shop pulses once.
-7. **2:00, hand-off.** The tutorial ends. (A quest list was planned here; it's postponed, see `docs/plans/M10.md`.) After the training step, the arrow leads to the shop once you have 50 coins and no upgrades yet. The fence around the plaza only opens at the trails, so the arrow routes through the nearest gate.
+7. **2:00, hand-off.** The tutorial ends. (A quest list was planned here; it's postponed, see [docs/plans/M10.md](plans/M10.md).) After the training step, the arrow leads to the shop once you have 50 coins and no upgrades yet. The fence around the plaza only opens at the trails, so the arrow routes through the nearest gate.
 
 Players who join mid-forest get the same flow. Returning players skip it, but the quest list continues where they left off.
 
@@ -102,7 +102,7 @@ Players start at 32 studs per second, gain 1 about every 9 Speed at first, reach
 
 ## Trees, rarity and seeds
 
-**The seed shop and special trees (built 2026-10-07, `docs/plans/SeedShop.md`).** The free acorns grow Common trees only (the leafy tree and the pine). Special trees come from the **seed shop**, a Seeds tab in the altar shop, Grow a Garden style:
+**The seed shop and special trees (built 2026-10-07, [docs/plans/SeedShop.md](plans/SeedShop.md)).** The free acorns grow Common trees only (the leafy tree and the pine). Special trees come from the **seed shop**, a Seeds tab in the altar shop, Grow a Garden style:
 
 - **Restocks every 5 minutes**, with a countdown. Each restock rolls which seeds are in stock and how many, and every server sees the same stock at the same time. Stock counts are per player.
 - **Seeds are saved in your seed bag** and used up when planted. Hold one from the bag (the HUD's Seeds button) and press E on an empty plot or an unfinished Common tree in the open row: it becomes that special tree, keeps its acorns, and the special seed counts as one more seed. Up to **3 special seeds per player per forest**.
@@ -175,7 +175,7 @@ When the Forest Bar fills, the server triggers the **Forest Awakening**, then th
 
 **The Ancient Tree.** A colossal tree stands in the middle of the hub and grows as the Forest Bar fills, from a sapling at the start of a forest to a giant several hundred studs tall at 100%, visible from anywhere on the map. It's the forest's pyramid: one giant thing the whole server watches rise together. It shakes and grows a step whenever a ring is completed.
 
-**Forest complete (changed 2026-10-06, see `docs/plans/M6.md`):**
+**Forest complete (changed 2026-10-06, see [docs/plans/M6.md](plans/M6.md)):**
 
 1. **Reward:** everyone online when the bar fills gets +500 coins and credit for the forest (+1 forests completed, which unlocks stronger training stations).
 2. **Cutscene (about 8 seconds, skippable):** the camera flies up and around the Ancient Tree as it awakens: it glows, its canopy blooms and a beam of light pours down. "Forest complete! +500 coins" shows when it ends.

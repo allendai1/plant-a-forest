@@ -100,7 +100,7 @@ Example: on the 10x bench with the 4x Strength pass, your trees at +150% and one
 | `src/client/Controllers/ForestController.luau` | The new species build like Leafy and Pine (models come from `Trees.Species`, so nothing new). New: petals or sparkles on Cherry Blossom and Crystal Trees from stage 4, and the owner name label on Epic and Legendary trees. |
 | `tools/build_map.luau` | Import `Palm1–8`, `Sakura1–8`, `Redwood1–8` and `Crystal1–8` into `Assets.Trees`, and the four seeds into `Assets.Seeds`, with their colors. The crystal shards are Neon, dimmed like the other neon. |
 | `tests/SeedShopCheck.luau` | Pure checks: `seedStock(n)` is the same twice in a row, stays within each seed's range, and changes between restocks; and the boost sums and caps. |
-| Docs | GDD (seed shop, special trees and boosts replace the rarity coin table), `ARCHITECTURE.md` (remotes, saved fields, attributes), `CLAUDE.md` (move the seed shop and rarity out of "not yet"), `HANDOFF.md`, and the spreadsheet numbers in "Waiting on the user". |
+| Docs | GDD (seed shop, special trees and boosts replace the rarity coin table), [ARCHITECTURE.md](../ARCHITECTURE.md) (remotes, saved fields, attributes), [CLAUDE.md](../../CLAUDE.md) (move the seed shop and rarity out of "not yet"), [HANDOFF.md](../HANDOFF.md), and the spreadsheet numbers in "Waiting on the user". |
 
 **Two particle images** get uploaded with Open Cloud: a pink petal and a small sparkle star, generated as PNGs.
 

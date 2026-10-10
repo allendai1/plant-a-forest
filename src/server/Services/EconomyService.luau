@@ -9,6 +9,7 @@
 -- bought out yet, for its coin price, into their seed bag.
 
 local CollectionService = game:GetService("CollectionService")
+local GroupService = game:GetService("GroupService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
@@ -129,6 +130,37 @@ local function onClaimFreeGift(player: Player)
 	Analytics.earned(player, GameConfig.Economy.FreeGiftCoins, "FreeGift", Enum.AnalyticsEconomyTransactionType.Onboarding)
 end
 
+-- ClaimGroupGift (2026-10-08): GroupGiftCoins once per player ever, if they're in the group. The client asks after
+-- Roblox's join-group prompt; the server looks the membership up itself (GetGroupsAsync, not the cached IsInGroup,
+-- so a join made a moment ago counts).
+local function onClaimGroupGift(player: Player)
+	local rate = GameConfig.Economy.GiftRate
+	if not Guard.allow(player, "ClaimGroupGift", rate.PerSecond, rate.Burst) then
+		return
+	end
+	local profile = DataService.get(player)
+	if not profile or profile.GroupGiftClaimed ~= 0 then
+		return
+	end
+	local ok, groups = pcall(GroupService.GetGroupsAsync, GroupService, player.UserId)
+	if not ok or typeof(groups) ~= "table" then
+		return
+	end
+	local member = false
+	for _, group in groups do
+		if typeof(group) == "table" and group.Id == GameConfig.Economy.GroupId then
+			member = true
+			break
+		end
+	end
+	if not member or DataService.get(player) ~= profile or profile.GroupGiftClaimed ~= 0 then
+		return -- not in it, or they left or claimed while we were looking
+	end
+	DataService.set(player, "GroupGiftClaimed", 1)
+	DataService.add(player, "Coins", GameConfig.Economy.GroupGiftCoins)
+	Analytics.earned(player, GameConfig.Economy.GroupGiftCoins, "GroupGift", Enum.AnalyticsEconomyTransactionType.Onboarding)
+end
+
 function EconomyService.init()
 	if not GameConfig.Features.SeedShop then
 		-- The feature is off: the seed stall and its ring leave the map (kept in ServerStorage).
@@ -142,6 +174,7 @@ function EconomyService.init()
 	end
 	Remotes.event("BuyUpgrade").OnServerEvent:Connect(onBuyUpgrade)
 	Remotes.event("ClaimFreeGift").OnServerEvent:Connect(onClaimFreeGift)
+	Remotes.event("ClaimGroupGift").OnServerEvent:Connect(onClaimGroupGift)
 	Remotes.event("BuySeed").OnServerEvent:Connect(onBuySeed)
 end
 

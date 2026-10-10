@@ -13,6 +13,7 @@ export type EventName =
 	| "HexBatch" -- S->C: Types.HexBatch
 	| "AwakeningReward" -- S->C: { coins: number, planted: number?, needed: number? } (coins 0 = no forest credit)
 	| "ClaimFreeGift"
+	| "ClaimGroupGift" -- C->S, no payload: after the join-group prompt; the server checks membership itself
 	| "LeaveBench" -- C->S, no payload
 	| "StationLocked" -- S->C: multiplier, forestsNeeded
 	| "SetWalkCap" -- C->S: cap (studs per second; 0 = no limit)
@@ -22,6 +23,7 @@ export type EventName =
 	| "RobuxShopOpened" -- C->S, no payload: analytics only (the RobuxShop funnel)
 	| "TutorialIntroDone" -- C->S, no payload: the story intro was watched or skipped (TutorialStep 0 -> 1)
 	| "DropSeeds" -- C->S, no payload: drop everything you carry (lobby only, CarryService)
+	| "ClaimQuest" -- C->S, no payload: claim the current starter quest (QuestService)
 
 -- GetForest: () -> Types.Snapshot? (nil when rate-limited)
 -- RedeemCode: (code: string) -> (ok: boolean, message: string), the CODES panel (CodeService)
@@ -33,6 +35,7 @@ local EVENTS: { EventName } = {
 	"HexBatch",
 	"AwakeningReward",
 	"ClaimFreeGift",
+	"ClaimGroupGift",
 	"LeaveBench",
 	"StationLocked",
 	"SetWalkCap",
@@ -42,6 +45,7 @@ local EVENTS: { EventName } = {
 	"RobuxShopOpened",
 	"TutorialIntroDone",
 	"DropSeeds",
+	"ClaimQuest",
 }
 
 local FUNCTIONS: { FunctionName } = { "GetForest", "RedeemCode" }

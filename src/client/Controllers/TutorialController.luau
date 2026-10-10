@@ -7,7 +7,7 @@
 --   1 grab acorns (arrow to a pile)   2 plant them (the usual arrow to a plot)   3 bench for Strength (the 1x pad)
 --   4 run for Speed (the 1x pad)      5 fill up again (arrow to a pile)         6 plant them all
 --   7 buy an upgrade (arrow to the shop)
--- and then "Tutorial complete!".
+-- and then "Tutorial finished!". The steps name the button for the device (2026-10-09, the user's ask).
 -- After the tutorial, a training tip: planting Tutorial.RemindTrips loads in a row without training shows "Tip:
 -- train to carry more and walk faster" with the arrow to your best unlocked station for a few seconds (at most once
 -- every RemindCooldown; starting to train or arriving there ends it).
@@ -23,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
@@ -33,6 +34,8 @@ local Sounds = require(script.Parent.Parent.Sounds)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
 local CHECK_SECONDS = 0.25
+local FINISHED_SIZE = 0.75 -- the "Tutorial finished!" banner, as a share of a normal banner's size
+local FINISHED_SECONDS = 4 -- and how long it stays (other banners: 3)
 -- The story intro: captions in order, each shown for its seconds; the camera sweeps in over all of them.
 local INTRO_LINES = {
 	{ text = "Long ago, a great forest covered this island.", seconds = 3.5 },
@@ -68,6 +71,14 @@ local function nearestTagged(tag: string, from: Vector3): Vector3?
 	return best
 end
 
+-- The button to press on this device: a phone's on-screen button, a gamepad's button or the keyboard key.
+local function key(keyboard: string, phone: string, gamepad: string): string
+	if UIStyle.isTouch() then
+		return phone
+	end
+	return if string.find(UserInputService:GetLastInputType().Name, "Gamepad") then gamepad else keyboard
+end
+
 -- The current step: the prompt to show and where the arrow should lead (nil: the usual behaviour).
 local function currentStep(root: BasePart): (string?, Vector3?)
 	local t = GameConfig.Tutorial
@@ -80,21 +91,28 @@ local function currentStep(root: BasePart): (string?, Vector3?)
 	local capacity = GameConfig.capacity(strength)
 	local text, spot = "", nil
 	if name == "PickUp" then
-		text, spot = "Grab acorns", nearestTagged("SeedRack", root.Position)
+		text = `{key("Hold E", "Hold Pick Up Seeds", "Hold X")} at an acorn pile to grab acorns`
+		spot = nearestTagged("SeedRack", root.Position)
 	elseif name == "Plant" then
-		text = "Plant them in the glowing tiles"
+		-- "Glowing tiles", not "the glowing ring": since 2026-10-09 tiles a ring further in can be open too.
+		text = `{key("Press E", "Tap Plant", "Press X")} to plant in the glowing tiles`
 	elseif name == "Train" then
-		text = `Lift weights to carry more ({math.floor(strength)}/{t.TrainedStrength})`
+		text = `{key("Press E", "Tap Train", "Press X")} at a bench to carry more ({math.floor(strength)}/{t.TrainedStrength})`
 		spot = nearestTagged("TutorialTraining", root.Position)
 	elseif name == "TrainSpeed" then
-		text = `Run on the treadmill to walk faster ({math.floor(speed)}/{t.TrainedSpeed})`
+		-- Still on the bench from the step before: say how to get off first (you leave a bench by jumping).
+		local benching = localPlayer:GetAttribute("Benching")
+		local getUp = if typeof(benching) == "string" and benching ~= ""
+			then `{key("Press Space", "Tap Jump", "Press A")} to get off the bench, then s`
+			else "S"
+		text = `{getUp}tep on a treadmill to walk faster ({math.floor(speed)}/{t.TrainedSpeed})`
 		spot = nearestTagged("TutorialTraining", root.Position)
 	elseif name == "PickUpMore" then
 		text, spot = `Fill up on acorns ({carried}/{capacity})`, nearestTagged("SeedRack", root.Position)
 	elseif name == "PlantMore" then
 		text = "Plant them all"
 	elseif name == "Shop" then
-		text, spot = "Buy an upgrade", nearestTagged("ShopZone", root.Position)
+		text, spot = "Step into the shop's ring and buy an upgrade", nearestTagged("ShopZone", root.Position)
 	end
 	return `{index}/{#t.Steps}  {text}`, spot
 end
@@ -287,13 +305,31 @@ function TutorialController.start()
 				introPlaying = false
 			end)
 		elseif step == GameConfig.Tutorial.DoneStep and typeof(lastStep) == "number" and lastStep < step then
-			HUD.banner("Tutorial complete! Now help grow the forest!", Color3.fromRGB(170, 255, 140))
+			-- Smaller and a second longer than other banners (the user's call, 2026-10-09).
+			HUD.banner(
+				"Tutorial finished! Work together with others to grow the forest!",
+				Color3.fromRGB(170, 255, 140),
+				FINISHED_SIZE,
+				FINISHED_SECONDS
+			)
 			Sounds.play("Fanfare")
 		end
 		lastStep = step
 	end
 	localPlayer:GetAttributeChangedSignal("TutorialStep"):Connect(onStep)
 	onStep()
+
+	-- The first tree you ever finish (2026-10-09): the server pays Economy.FirstTreeCoins and sets FirstTreeDone 0 -> 1.
+	local firstTree = localPlayer:GetAttribute("FirstTreeDone")
+	localPlayer:GetAttributeChangedSignal("FirstTreeDone"):Connect(function()
+		local now = localPlayer:GetAttribute("FirstTreeDone")
+		if firstTree == 0 and now == 1 then
+			HUD.banner(`Your first tree! +{GameConfig.Economy.FirstTreeCoins} coins`, Color3.fromRGB(170, 255, 140))
+			HUD.confetti()
+			Sounds.play("Fanfare")
+		end
+		firstTree = now
+	end)
 
 	-- The training tip: loads planted (Carried back to 0) since you last gained Strength or Speed.
 	local trips, tipUntil, nextTip = 0, 0, 0
@@ -331,7 +367,7 @@ function TutorialController.start()
 	end
 	local function trainingTip(root: BasePart): (string?, Vector3?)
 		local t = GameConfig.Tutorial
-		if (attribute("TutorialStep") or 0) < t.DoneStep then
+		if (attribute("TutorialStep") or 0) < t.DoneStep or (attribute("Strength") or 0) > t.RemindMaxStrength then
 			return nil, nil
 		end
 		local clock = os.clock()
@@ -345,6 +381,27 @@ function TutorialController.start()
 		return "Tip: train to carry more and walk faster", spot
 	end
 
+	-- The first forest break (2026-10-09, the user's ask): an arrow into the World Tree, where the Ancient Spring
+	-- trains both stats. Once per player: the server saves SpringGuideSeen the first time they stand in it.
+	local function springGuide(): (string?, Vector3?)
+		local forestState = ReplicatedStorage:FindFirstChild("ForestState")
+		local spring = forestState and forestState:GetAttribute("SpringMultiplier")
+		local center = forestState and forestState:GetAttribute("Center")
+		if attribute("SpringGuideSeen") ~= 0 or typeof(spring) ~= "number" or spring <= 0 or typeof(center) ~= "Vector3" then
+			return nil, nil
+		end
+		if GameConfig.Awakening.SpringHeightStuds <= 0 then
+			return `The forest is grown! Stand inside the World Tree to train {spring}x`, center
+		end
+		-- Up the tree (2026-10-09): to the foot of the climb, then up to the platform once on it.
+		local root = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+		local climbing = root and root:IsA("BasePart") and root.Position.Y > center.Y + 6
+		local target = if climbing
+			then center + Vector3.new(0, GameConfig.Awakening.SpringHeightStuds, 0)
+			else GameConfig.climbStart(center)
+		return `The forest is grown! Climb the World Tree to train {spring}x`, target
+	end
+
 	-- Shows or hides the gift board on this client (parts, label, glowing circle).
 	local function showGift(board: Instance, on: boolean)
 		if board:GetAttribute("Shown") == on then
@@ -352,6 +409,7 @@ function TutorialController.start()
 		end
 		board:SetAttribute("Shown", on)
 		for _, item in board:GetDescendants() do
+			-- selene: allow(if_same_then_else) -- separate branches so each narrows to a type with Enabled
 			if item:IsA("BasePart") then
 				item.LocalTransparencyModifier = if on then 0 else 1
 			elseif item:IsA("LayerCollector") then
@@ -388,7 +446,10 @@ function TutorialController.start()
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		local text, spot = nil, nil
 		if root and root:IsA("BasePart") and not introPlaying then
-			text, spot = currentStep(root)
+			text, spot = springGuide()
+			if not text then
+				text, spot = currentStep(root)
+			end
 			if not text then
 				text, spot = trainingTip(root)
 			end

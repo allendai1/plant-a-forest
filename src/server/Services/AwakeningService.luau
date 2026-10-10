@@ -10,9 +10,9 @@
 -- ForestState attributes: AwakeningEndsAt (server time, 0 when not running), SpringMultiplier (0 when the spring
 -- is closed), Extensions (a count of purchases clients watch for the banner), ExtendedBy and ExtendedMinutes
 -- (the last one), and the world pick: PickedTier (0 = none yet), PickedBy, Picks (a count for the banner).
--- Worlds: when the break ends, the next forest's tier is the picked one if someone bought a pick, else the
--- roulette's roll by Weight. ForestState NextTier (its index) and TierRolls (a count clients watch to play the
--- roulette); after Roulette.SpinSeconds + HoldSeconds the forest resets as that tier.
+-- Worlds: when the break ends, a bought pick starts at once (no roulette). Otherwise the roulette rolls by Weight:
+-- ForestState NextTier (its index) and TierRolls (a count clients watch to play the roulette); after
+-- Roulette.SpinSeconds + HoldSeconds the forest resets as that tier.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -101,25 +101,34 @@ local function begin()
 	print(`[AwakeningService] forest complete, spring {forestState:GetAttribute("SpringMultiplier")}x`)
 end
 
+-- Ends the break now (the spring's multiplier, the 2X TRAINING sign and the break screens with it), no roulette.
+-- The test panel's "Next world" calls it before starting a fresh forest in the middle of a break.
+function AwakeningService.stop()
+	endsAt = 0
+	forestState:SetAttribute("SpringMultiplier", 0)
+	publish()
+end
+
 -- Ends the break, spins the roulette for the next world, then resets the forest as that world.
 function AwakeningService.finish()
 	if endsAt == 0 then
 		return
 	end
-	endsAt = 0
-	forestState:SetAttribute("SpringMultiplier", 0)
-	publish()
+	AwakeningService.stop()
 	Analytics.breakEnded()
 	local picked = forestState:GetAttribute("PickedTier")
-	local nextTier = if typeof(picked) == "number" and GameConfig.Tiers[picked]
-		then picked
-		else GameConfig.pickTier(rng:NextNumber())
 	forestState:SetAttribute("PickedTier", 0)
-	rolls += 1
-	forestState:SetAttribute("NextTier", nextTier)
-	forestState:SetAttribute("TierRolls", rolls)
-	Analytics.roulette()
-	task.wait(GameConfig.Roulette.SpinSeconds + GameConfig.Roulette.HoldSeconds)
+	local nextTier: number
+	if typeof(picked) == "number" and GameConfig.Tiers[picked] then
+		nextTier = picked -- bought: no roulette, the picked world starts now (2026-10-08, the user's ask)
+	else
+		nextTier = GameConfig.pickTier(rng:NextNumber())
+		rolls += 1
+		forestState:SetAttribute("NextTier", nextTier)
+		forestState:SetAttribute("TierRolls", rolls)
+		Analytics.roulette()
+		task.wait(GameConfig.Roulette.SpinSeconds + GameConfig.Roulette.HoldSeconds)
+	end
 	ForestService.setTier(nextTier)
 	ForestService.reset()
 end

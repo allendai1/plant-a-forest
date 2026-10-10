@@ -1,52 +1,52 @@
 # Handoff: where Plant the Forest stands
 
-Written 2026-10-06; last updated 2026-10-08 at the end of the launch-prep session. Read this after `CLAUDE.md`, then `docs/DESIGN_CHANGES.md` (what changed from the original GDD and why) and the latest plan in `docs/plans/`.
+Written 2026-10-06; last updated 2026-10-08 at the end of the soft-launch polish session. Read this after [CLAUDE.md](../CLAUDE.md), then [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md) (what changed from the original GDD and why) and the latest plan in `docs/plans/`.
 
-## Where we left off (2026-10-08)
+## Where we left off (2026-10-08, late: soft-launch polish)
 
-**Not yet in Studio:** the glow ring walls were made shorter (`GlowRingController` WALL_HEIGHT 2.2 → 1.5); synced once the user stopped their playtest (see the bottom notes). Everything else from 2026-10-08 is synced. **The place still needs saving and publishing** (the user does it, or saves to a file and runs `tools/publish_place.py`).
+**State:** feature-complete MVP, polished and published by the user (last publish was before the final round below, so **republish**). Every script in Studio matches the repo (checked by comparing each script's `#Source` with the file size). Studio-only edits that exist only in the saved place: the seed stall put away in `ServerStorage.SavedForLater`, the Ranger-copy shopkeeper, the four lobby leaderboards (user-placed, r about 146), the group gift bulletin board. **The user must save and publish** to keep them.
 
-**Git:** the project is on GitHub (https://github.com/allendai1/plant-a-forest.git, branch `main`) since 2026-10-08. Commit and push only when the user asks.
+**Git:** https://github.com/allendai1/plant-a-forest.git, branch `main`. Last push `a3776ed` (polish pass + M12 desktop numbers). **Uncommitted since then** (all synced to Studio): the group gift (GroupGiftController, ClaimGroupGift, GroupGiftClaimed), FallService, the four-stat leaderboards, the locked-station buy prompt, footsteps removed, mobile Plant/Drop/trunk/shop changes, prompt padding, Sherwood weight 50, sound volume tweaks, tutorial ring hint. Commit and push only when the user asks.
 
-**What changed on 2026-10-08** (each has its own note at the bottom of this file): forest size follows the server's head count (`GameConfig.ForestSize`, `Tiers[].SeedsPerPlayer`); the analytics forest report, ring, tree-gap and leave events, and the layout A/B framework (paused: `OuterFirstShare = 1`); the acorn stack over the head (replaced the circling acorns); Q to drop seeds in the lobby; the gym moved into the garden around the World Tree (drawn at 60%; Spring radius 43); the tree-trunk ring circle next to the Forest Bar (bar ticks removed, green fill gradient); glow rings with a moving wall at the shop and dispensers; 1.5x dispensers with a ring and Wood material; the UPGRADES sign text; nameplates sized in studs and 150-stud max zoom; the speed-limit slider; the Park Ranger's green aura and salute (NPC poses now play on the clients); quieter tree chime; comically fast bench press.
+**Working rules learned this session** (also in memory): never use computer-use on the user's machine; verify with the Studio MCP and ask the user to check visuals and phone layouts. Don't start playtests while the user may be in Studio unless asked. Studio's Device Simulator reports a keyboard, so `UIStyle.isTouch()` is false there and the phone layout can't be previewed in it; the user tests phones themselves.
 
-**Before release (from the 2026-10-08 review):**
-1. **M12 performance:** measure a full forest on the phone emulator (needs Studio rendering) and fix the worst costs.
-2. **A two-player test** of the shared features (stacks, nameplates, benches, forest and break).
-3. **One real purchase** on the live game (a pass, a dev product, a Robux upgrade level), by the user.
-4. **Dashboard:** content maturity questionnaire, icon, thumbnails, description, devices, badge icons, products and prices, Lord of the Forest pass off sale, make public.
-5. **Balancing.xlsx** needs the 2026-10-08 numbers (rep 0.266 s, the scaling forest target, Spring 43, max zoom 150, Sherwood 100 per tree).
+**Open items before ads:**
+1. **Two-player test** of the shared features (the user said they'd do it).
+2. **Real-phone check** of the latest mobile layout: dark round Plant button up-left of the jump button, Drop button right of the Forest Bar, ring trunk at the top middle in the top-bar row (1.25x), bigger shop, Pick Up panel padding. Also frame rate with a full forest on a phone (desktop: 60 fps at max quality, [docs/plans/M12.md](plans/M12.md)).
+3. **Player list column order:** Roblox showed Speed, Strength, Forests, Seeds regardless of creation order; Priority/IsPrimary values were added per column (LeaderboardService). Unconfirmed; if it still misorders, the fix is a custom player list.
+4. **Balancing.xlsx:** world weights 50/30/10, group gift 500 coins, plus the earlier 2026-10-08 numbers.
+5. Purchases and the Creator Dashboard are done (the user's word).
 
-**Offered, not decided:** weighting the next-world roll by the server's median capacity (weak servers mostly Sherwood, strong ones more Kyoto and Smoky); the mild "count veterans a bit more" forest sizing (only if the data asks for it, see `docs/plans/TuningSignals.md`); updating `tools/build_map.luau` with the moved ranger station (a full map rebuild would put it back).
+**Defaults the user may change:** group gift 500 coins (`GameConfig.Economy.GroupGiftCoins`); fall respawn below y -50 (FallService FALL_Y); world weights 50/30/10 (the 10 means Kyoto is 33%, not 30%).
 
-**Tools added:** `tools/upload_fbx.py` (a Model) and `tools/upload_png.py` (a Decal) upload through Open Cloud with the API key from the environment (free; never spend Robux). A decal's image id: `InsertService:LoadAsset(decalId)` in Studio, then the Decal's Texture.
+**Tools:** `tools/studio_sync.py --fetch <files>` with `python -m http.server 34877 --bind 127.0.0.1` running from the repo root (stop it when done); `tools/upload_png.py`, `tools/upload_fbx.py` (Open Cloud, free; never spend Robux).
 
 ## Status
 
 | Milestone | State | Plan and results |
 | --- | --- | --- |
-| Architecture | approved | `docs/ARCHITECTURE.md` |
-| M0 Project setup | done | `docs/plans/M0.md` |
-| M1 Hex grid and tiles | done | `docs/plans/M1.md` |
-| M2 Stats and training | done | `docs/plans/M2.md` |
-| M2b Interactive stations (press E bench, auto treadmill, per-station multipliers, Robux unlock popup) | done | `docs/plans/M2b.md` |
-| M3 Seed rack and carrying | done | `docs/plans/M3.md` |
-| M4 Targeting and planting | done | `docs/plans/M4.md` |
-| M5 Growth, Forest Bar and coins (starter name label postponed) | done | `docs/plans/M5.md` |
-| M6 Forest complete (cutscene, break, Ancient Spring, Robux extensions, test panel) | done | `docs/plans/M6.md` |
-| M6b Lobby (glyphs and vines, plaza, fence, trails, shop altar and ring, acorn racks, tier pads) | done | `docs/plans/M6b.md` |
-| M7 Upgrades (the shop at the altar ring) | done | `docs/plans/M7.md` |
-| M8 Saving (ProfileStore) | done | `docs/plans/M8.md` |
-| M9 Rain and the Wet mutation | postponed to after launch (the user's call) | `docs/MVP_PLAN.md` |
-| M10 First-time experience (tutorial prompts and arrow, free gift; quests postponed) | done | `docs/plans/M10.md` |
-| M11 Art pass (moved before performance) | done, except the fps check (moved to M12) | `docs/plans/M11.md` |
+| Architecture | approved | [docs/ARCHITECTURE.md](ARCHITECTURE.md) |
+| M0 Project setup | done | [docs/plans/M0.md](plans/M0.md) |
+| M1 Hex grid and tiles | done | [docs/plans/M1.md](plans/M1.md) |
+| M2 Stats and training | done | [docs/plans/M2.md](plans/M2.md) |
+| M2b Interactive stations (press E bench, auto treadmill, per-station multipliers, Robux unlock popup) | done | [docs/plans/M2b.md](plans/M2b.md) |
+| M3 Seed rack and carrying | done | [docs/plans/M3.md](plans/M3.md) |
+| M4 Targeting and planting | done | [docs/plans/M4.md](plans/M4.md) |
+| M5 Growth, Forest Bar and coins (starter name label postponed) | done | [docs/plans/M5.md](plans/M5.md) |
+| M6 Forest complete (cutscene, break, Ancient Spring, Robux extensions, test panel) | done | [docs/plans/M6.md](plans/M6.md) |
+| M6b Lobby (glyphs and vines, plaza, fence, trails, shop altar and ring, acorn racks, tier pads) | done | [docs/plans/M6b.md](plans/M6b.md) |
+| M7 Upgrades (the shop at the altar ring) | done | [docs/plans/M7.md](plans/M7.md) |
+| M8 Saving (ProfileStore) | done | [docs/plans/M8.md](plans/M8.md) |
+| M9 Rain and the Wet mutation | postponed to after launch (the user's call) | [docs/MVP_PLAN.md](MVP_PLAN.md) |
+| M10 First-time experience (tutorial prompts and arrow, free gift; quests postponed) | done | [docs/plans/M10.md](plans/M10.md) |
+| M11 Art pass (moved before performance) | done, except the fps check (moved to M12) | [docs/plans/M11.md](plans/M11.md) |
 | Post-M11 polish (the user's requests: training tiers to 100x, pads, effects, lighting, bench and run animations) | done | "Changes after M11" below |
-| GUI pass (Build-the-Pyramid-style HUD, Robux shop, boost passes, Forest Bar seed products, Friend Boost, custom E prompt, Robux upgrade levels, phone layout) | done; the friends and server boost icons are still emoji | `docs/plans/GUI.md` |
-| Polish after the GUI pass (2026-10-06/07, the user's requests one by one) | done; each has its own section below | `docs/plans/TreeStages.md`, `docs/plans/AcornOrbit.md` |
-| Seed shop (special trees that boost training, the user's request) | done 2026-10-07; two-player checks still open | `docs/plans/SeedShop.md` |
-| Polish pass (shops UI, sound, Park Ranger / Forest Lord, codes, seed shop rebalance, leaderboards, badges) | done 2026-10-07; badges need creating on the dashboard, icons still emoji | `docs/plans/Polish.md` |
-| Launch prep (2026-10-08: forest sizing, analytics, lobby and HUD changes; see "Where we left off") | done | this file, `docs/plans/TuningSignals.md` |
-| **M12 Performance pass** | **in progress**: tile collision removed; frame-rate measurement needs Studio rendering | `docs/plans/M12.md` |
+| GUI pass (Build-the-Pyramid-style HUD, Robux shop, boost passes, Forest Bar seed products, Friend Boost, custom E prompt, Robux upgrade levels, phone layout) | done; the friends and server boost icons are still emoji | [docs/plans/GUI.md](plans/GUI.md) |
+| Polish after the GUI pass (2026-10-06/07, the user's requests one by one) | done; each has its own section below | [docs/plans/TreeStages.md](plans/TreeStages.md), [docs/plans/AcornOrbit.md](plans/AcornOrbit.md) |
+| Seed shop (special trees that boost training, the user's request) | done 2026-10-07; two-player checks still open | [docs/plans/SeedShop.md](plans/SeedShop.md) |
+| Polish pass (shops UI, sound, Park Ranger / Forest Lord, codes, seed shop rebalance, leaderboards, badges) | done 2026-10-07; badges need creating on the dashboard, icons still emoji | [docs/plans/Polish.md](plans/Polish.md) |
+| Launch prep (2026-10-08: forest sizing, analytics, lobby and HUD changes; see "Where we left off") | done | this file, [docs/plans/TuningSignals.md](plans/TuningSignals.md) |
+| **M12 Performance pass** | **in progress**: tile collision removed; frame-rate measurement needs Studio rendering | [docs/plans/M12.md](plans/M12.md) |
 
 Each plan file ends with a "What changed from the plan" section that lists exactly what was verified and what wasn't.
 
@@ -108,7 +108,7 @@ All in `tools/build_map.luau` unless noted, and already rebuilt in Studio:
 
 ## GUI pass (2026-10-06)
 
-See `docs/plans/GUI.md`.
+See [docs/plans/GUI.md](plans/GUI.md).
 - **Shared look:** `src/client/UIStyle.luau`:
   - the font (Gotham Black) and colors
   - `dropShadow`, the pyramid's two-label text with an outline and a dark copy underneath
@@ -117,7 +117,7 @@ See `docs/plans/GUI.md`.
   - price lookups
   - `UIStyle.Icons`: the user's images for coins, speed, strength and forests; emoji for friends, shop and the server boost
 - **Map signs:** `tools/build_map.luau` restyles them at the end of a rebuild.
-- **Robux items:** ids are in GameConfig (`BoostPasses`, `BarBoosts`, `ServerBoost`, `UpgradeProducts`, `FriendBoost`).
+- **Robux items:** ids are in GameConfig (`Boosts`, `BarBoosts`, `ServerBoost`, `UpgradeProducts`, `FriendBoost`).
 - **Prompts:** set to `Style = Custom` and drawn by PromptController.
 - **Postponed:** the user postponed the two "characters" (quicker pickup and place) from the pyramid's shop, to design later.
 
@@ -141,7 +141,7 @@ See `docs/plans/GUI.md`.
 
 ## Tree stages: 4 → 8 (2026-10-06)
 
-See `docs/plans/TreeStages.md`.
+See [docs/plans/TreeStages.md](plans/TreeStages.md).
 - **Models:** `Leafy1–8` / `Pine1–8` in `Assets.Trees`.
 - **Stage starts:** `GameConfig.Growth.StageStarts`, at seeds 1, 3, 6, 10, 16, 24, 33 and 44.
 - **Stage changes:** a smoother pop, a leaf puff, and a "bling" for your own seeds on stages 2, 4 and 6 (ForestController `STAGE_SOUND_ID` = Creator Store "bling_diamond_pickup_2", 4612374393, same pitch each time; `STAGE_BLING_EVERY` = 2). The user tried a rising scale and chose this. The full-grown chime is back at pitch 1.
@@ -165,7 +165,7 @@ In `HUD.luau`:
 
 ## Acorns circling the head (2026-10-06)
 
-The giant seed is replaced by acorns circling the head (see `docs/plans/AcornOrbit.md`).
+The giant seed is replaced by acorns circling the head (see [docs/plans/AcornOrbit.md](plans/AcornOrbit.md)).
 - **Config:** `GameConfig.AcornOrbit` and `GameConfig.acornCounts`.
 - **Code:** CarryController.
 - **How it looks:**
@@ -204,7 +204,7 @@ The giant seed is replaced by acorns circling the head (see `docs/plans/AcornOrb
 
 ## Seed shop (2026-10-07)
 
-See `docs/plans/SeedShop.md`. Grow a Garden-style:
+See [docs/plans/SeedShop.md](plans/SeedShop.md). Grow a Garden-style:
 - **Restock:** a 5-minute restock, the same stock in every server (`GameConfig.seedStock`).
 - **Seeds:** four special seeds (Palm, Cherry Blossom, Redwood, Crystal Tree), saved in a seed bag.
 - **Planting:** a seed turns an open Common tree into a special one, up to 3 per player per forest.
@@ -225,7 +225,7 @@ All in `tools/build_map.luau`, rebuilt in Studio:
 
 ## Seed stall, bamboo, worlds and settings (2026-10-07, later)
 
-See the end of `docs/plans/SeedShop.md`.
+See the end of [docs/plans/SeedShop.md](plans/SeedShop.md).
 - **Seed stall:** the seeds have their own stall at 285°, where the fountain was. The altar only sells upgrades.
 - **Bamboo:** a new shop seed.
 - **Worlds:**
@@ -284,7 +284,7 @@ Readiness review: NOT READY yet. The blockers are performance (M12), a 2-player 
   - **LeftDuringBreak:** the same first two fields, for a player who leaves mid-break.
   - **Verified in Studio:** BreakActivity fired before the roulette, and LeftDuringBreak plus LeftGame fired when the playtest stopped mid-break. The field values themselves can't be read back in Studio.
 - **Treadmill kit:** the stray "TreadmillSpawn by Jose" free model was deleted (read first: no backdoor).
-- **Tile collision:** tiles no longer collide (see `docs/plans/M12.md`).
+- **Tile collision:** tiles no longer collide (see [docs/plans/M12.md](plans/M12.md)).
 
 ## Bulk upgrades +1 per level (2026-10-07, the user's call)
 
@@ -338,11 +338,11 @@ Bulk Pickup and Bulk Plant now give 1 → 2 → 3 → 4 → 5 → 6 per press (t
 - **Code:** all set through the API; GameConfig `BoostPasses` holds the new ids.
 - **Robux shop:** boost cards show a window of 4 tiers (`WINDOW_STEPS`).
 - **Forest Bar seed packs:** +500 / +1,000 / +2,000 / +5,000 for 49 / 89 / 159 / 349 Robux (were 300/1,500/3,000/15,000 at 45/117/225/630). The products were renamed and given a description saying the buyer gets the coins and forest credit; the amounts are in `GameConfig.BarBoosts`.
-- **Balance note:** 128x Strength stacks with the 100x station. If capacity gets out of hand, it shows in `docs/plans/TuningSignals.md`.
+- **Balance note:** 128x Strength stacks with the 100x station. If capacity gets out of hand, it shows in [docs/plans/TuningSignals.md](plans/TuningSignals.md).
 
 ## Monetization audit (2026-10-07)
 
-See `docs/plans/MonetizationAudit.md`. The receipt handling passes the skill's checklist; duplicate receipts were tested and grant once.
+See [docs/plans/MonetizationAudit.md](plans/MonetizationAudit.md). The receipt handling passes the skill's checklist; duplicate receipts were tested and grant once.
 - **Fixed:** pass ownership checks now keep retrying instead of giving up after 3 tries.
 - **Open:**
   - Forest Bar seeds bought during the break are held in server memory (option: hide those buttons during the break)
@@ -351,7 +351,7 @@ See `docs/plans/MonetizationAudit.md`. The receipt handling passes the skill's c
 
 ## Re-tuning waits for real data (2026-10-07, the user's call)
 
-Stats, prices and the tutorial stay as they are for launch. After launch, check `docs/plans/TuningSignals.md`: which analytics signal means too fast or too slow, and which GameConfig lever to turn. Open gap: a forest-length event isn't built yet.
+Stats, prices and the tutorial stay as they are for launch. After launch, check [docs/plans/TuningSignals.md](plans/TuningSignals.md): which analytics signal means too fast or too slow, and which GameConfig lever to turn. Open gap: a forest-length event isn't built yet.
 
 ## Free gift = favorite the game (2026-10-07, the user's call)
 
@@ -362,7 +362,7 @@ Stats, prices and the tutorial stay as they are for launch. After launch, check 
 
 ## Design review (2026-10-07)
 
-`docs/plans/DesignReview.md` covers retention by phase, an economy model (coins per hour and upgrade timing) and a tutorial audit.
+[docs/plans/DesignReview.md](plans/DesignReview.md) covers retention by phase, an economy model (coins per hour and upgrade timing) and a tutorial audit.
 - **Fixed straight away:** the free-gift popup no longer shows mid-tutorial, and the tutorial prompts are cut to about 5 words.
 - **Open recommendations:**
   - a walk-speed boost during the tutorial
@@ -378,7 +378,7 @@ Every unplanted tile now has the open-row brown and grass border. The slate grey
 ## Third world: Great Smoky Mountains (2026-10-07, the user's pick)
 
 - **The world:** autumn Maple and Birch trees, a giant maple World Tree with falling orange leaves, and 3x coins. Roulette odds are Sherwood 60, Kyoto 30, Smoky 10.
-- **Details:** `docs/plans/Worlds.md`. That doc also holds the later, not urgent, bigger-map notes and the future seed trees.
+- **Details:** [docs/plans/Worlds.md](plans/Worlds.md). That doc also holds the later, not urgent, bigger-map notes and the future seed trees.
 
 ## Acorn dispensers replace the acorn piles (2026-10-07, the user's request)
 
@@ -492,7 +492,7 @@ All 5 were created with the API key (scope `legacy-universe.badge`), inside the 
 
 ## Polish pass (2026-10-07)
 
-See `docs/plans/Polish.md` (screenshots in `docs/plans/polish/`). In short:
+See [docs/plans/Polish.md](plans/Polish.md) (screenshots in `docs/plans/polish/`). In short:
 - **Shops:** new UIStyle helpers (`clicky`, `deny`, `flash`, `card`, `closeButton`, `short`). The Robux shop has tabs (Boosts / Characters / Stations).
 - **Sound:** `src/client/Sounds.luau` (ids and the Effects/Music groups), `FootstepController`, `MusicController`, and Music / Sound effects toggles (`SetSetting`, which replaced `SetGuideArrow`).
 - **Characters:** the Hands passes are now the Park Ranger (2x) and the Forest Lord (3x). `OutfitService` dresses owners, places the NPCs by the altar and makes the shop previews.
@@ -535,7 +535,8 @@ See `docs/plans/Polish.md` (screenshots in `docs/plans/polish/`). In short:
   - `setCoins`, `setBulkPickupLevel`, `setBulkPlantLevel`, `setPlantingRangeLevel` (M7; `setBulkPlant` was removed)
   - `fillForest <fraction of the bar>` (M5)
   - GUI pass:
-    - `grantStrengthBoost <multiplier>` and `grantSpeedBoost <multiplier>` (1 takes the passes away)
+    - `grantStrengthBoost <multiplier>` and `grantSpeedBoost <multiplier>` (sets the saved boost and forgets the old boost passes; 1 = none)
+    - `buyStrengthBoost <step>` and `buySpeedBoost <step>` (a fake receipt for that boost product, 1 = first)
     - fake receipts through the real handler: `buyBar <1-4>`, `buyServerBoost`, `buyBulkPickup <level>`, `buyBulkPlant <level>`, `buyPlantingRange <level>`
     - `resendReceipt` (sends the last fake receipt again, to check it isn't granted twice)
     - `setFriendBoost <percent>`
@@ -571,7 +572,7 @@ Blender +X becomes Roblox −X in the imports, so the script turns things with `
 ## Waiting on the user
 
 - **Save the place in Studio** after every session's changes (the map, assets and scripts live only in the open place until saved).
-- **Spreadsheet (`docs/Balancing.xlsx`)** needs these numbers by hand (all are listed in `docs/DESIGN_CHANGES.md`):
+- **Spreadsheet (`docs/Balancing.xlsx`)** needs these numbers by hand (all are listed in [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md)):
   - hex size 16
   - hub rings 4 and forest rings 11
   - 540 plots × 44 seeds = target 23,760 (hub rings 6, forest rings 9, after M6)
@@ -598,7 +599,7 @@ Blender +X becomes Roblox −X in the imports, so the script turns things with `
 
 ## Next: planning M12 (performance pass)
 
-From `docs/MVP_PLAN.md` M12: a full forest of 540 trees and their tiles on a test server with StreamingEnabled, phone memory and frame rate, and many players.
+From [docs/MVP_PLAN.md](MVP_PLAN.md) M12: a full forest of 540 trees and their tiles on a test server with StreamingEnabled, phone memory and frame rate, and many players.
 
 **Starting point:**
 - **The M11 measurements:** with a full forest and the break, Studio ran at 15 fps at maximum graphics quality. At automatic quality it ran at 60 from the spawn and 28 from above, with 3,683 parts.
@@ -634,7 +635,7 @@ The two character NPCs used to be built by OutfitService at server start. They'r
 
 ## Capacity: square-root tail (2026-10-07)
 
-`GameConfig.capacity` is now the bigger of the old curve and `Stats.Capacity.Sqrt (0.4725) × √Strength`, matching three high Build the Pyramid readings (120.82M → 5,200, 567.83M → 11,252, 12.841B → 53,439). Unchanged below about 400K Strength; 1M → 472 (was 393), 10M → 1,494 (was 914). Balancing.xlsx needs the same change. Details: `docs/plans/TuningSignals.md`.
+`GameConfig.capacity` is now the bigger of the old curve and `Stats.Capacity.Sqrt (0.4725) × √Strength`, matching three high Build the Pyramid readings (120.82M → 5,200, 567.83M → 11,252, 12.841B → 53,439). Unchanged below about 400K Strength; 1M → 472 (was 393), 10M → 1,494 (was 914). Balancing.xlsx needs the same change. Details: [docs/plans/TuningSignals.md](plans/TuningSignals.md).
 
 ## 200 acorns per tree (2026-10-07)
 
@@ -814,3 +815,55 @@ The first world (Sherwood, 60% of the roulette) is 100 per tree, target 54,000 (
 - **Plant sound (2026-10-08).** Sounds.Plant = "footstep grass 3" (110522236020035, 0.39 s, volume 0.5), played by CarryController on your own plant press only (acorns or a held special seed), pitch 0.9-1.1, at most one per 0.12 s. Synced.
 - **World Tree see-through (2026-10-08).** Standing within SpringRadiusStuds (43) of the trunk, up to 30 studs above the hub, fades the tree (not its base) to LocalTransparencyModifier 0.75 for that player only (AncientTreeController INSIDE_FADE). Verified in a playtest: 0 outside, 0.75 inside, 0 again after leaving.
 - **Other 2026-10-08 tweaks:** "Full! Go plant." HUD hint removed; tutorial step text white; tutorial-complete sound = SuccessSfx 136993031050456; the training pop (Sounds.Gain) 0.35 -> 0.28. All synced.
+- **Shopkeeper is a Forest Ranger (2026-10-08).** `Workspace.Map.Lobby.RangerStation.Shopkeeper` is now a copy of the Forest Ranger with no scripts, Animator, animations, sign, tags or attributes, standing where the plain avatar stood. build_map's "make a shopkeeper if missing" check now searches the whole Map. Also: the break's bottom "2x boost: Strength and Speed" line removed (the 2X TRAINING sign says it); forest-complete clip 0.5 -> 0.35; pickup pop 0.25 -> 0.175.
+- **Invite friends button (2026-10-08).** The friends icon at the bottom left (HUD buildFriends, "Invite") is an ImageButton that opens Roblox's invite prompt (SocialService.PromptGameInvite after CanSendGameInviteAsync). Verified in a playtest: the Invite Friends dialog opens.
+- **Pre-release pass (2026-10-08).** stylua/selene/luau-lsp clean (selene: one style warning in HUD, shadowed `disc`); all 54 scripts in Studio match the repo; DevCommand only exists in Studio; Studio data stores are separate (_Studio); no stray server scripts; GUI previews are removed from PlayerGui on join; a full forest -> break -> reset into Kyoto ran with no errors.
+- **Footsteps removed; mobile buttons (2026-10-08).** FootstepController now only mutes Roblox's default running sound (the surface steps were removed, the user's call). Mobile Plant button: sized to 90% of the jump button (Roblox's default was 45 px) and dimmed to 0.3 instead of 0.6 with nothing to plant; it had looked missing because it was small and nearly invisible on the plaza. Verified in the iPhone 16 Device Simulator. Phone Drop button: 58 px tall (was 86), text 26 (was 32).
+- **Mobile Drop button, trunk, tutorial ring hint (2026-10-08).** Phones: Drop is now a round ContextActionService button like Plant (title "Drop", 90% of the jump button), level with the jump button just left of it, shown while carrying (CarryController placeNearJump/dropSpot); Plant moved a full width left of the jump button (clear of the Strength label). Computers keep the "Q Drop Seeds" bar. Phones: the ring trunk sits alone at the top middle (HUD RingTrunkHolder; hidden in the break, when the countdown uses that spot). Tutorial step 2 now reads "Plant them in the glowing ring: fill the outer rings first" (inner when ForestState OutsideIn is false). Not seen on a real phone yet: Studio's Device Simulator reports a keyboard, so UIStyle.isTouch() is false there.
+- **Mobile button look; prompt padding (2026-10-08).** Phone Plant and Drop buttons: no image (Roblox's bubble is cleared whenever it swaps back in on press), a black fill at 0.45 transparency with a round UICorner and a soft white UIStroke, like the jump button; Plant fades to 0.75 with its label at 0.4 when there's nothing to plant (set every frame). The custom prompt panel (Pick Up Seeds, benches) is 100 px tall (was 86) with 42 px side padding (was 30).
+- **Locked station -> Roblox buy prompt (2026-10-08).** TrainingController's showLocked now calls MarketplaceService:PromptGamePassPurchase for GameConfig.StationPasses[multiplier] directly (at most once per 2 s); the custom "station locked" popup with its Unlock button is gone. The server still sends StationLocked once per treadmill visit and on each locked bench press. Verified in a playtest at the 100x treadmill: the Roblox purchase dialog opened directly.
+- **Shop on phones, group gift, fall respawn (2026-10-08).** RobuxShop: on phones the window scales to fill up to 94% of the screen height / 92% width (PHONE_FILL); Stations cards are 190 tall (STATION_CARD, was 118) with a 46 title, 22 "or N forests" line and a 70-tall buy button (text 30); the page line is 24. Group gift: Workspace.Map.Lobby.GroupGiftBoard (a GiftBoard clone at (106, y, -32), right of the upgrades station, facing +X; also made by build_map) with a "Join Group" prompt tagged GroupGiftPrompt; GroupGiftController opens GroupService:PromptJoinAsync(GameConfig.Economy.GroupId = 336242048) and on Joined/AlreadyMember fires ClaimGroupGift; EconomyService checks GetGroupsAsync and pays GroupGiftCoins (500, a default) once (saved GroupGiftClaimed); the board hides once claimed. FallService: a character below y -50 is put back on the SpawnLocation (checked every 0.25 s), so falling never kills.
+- **Group gift is a bulletin board; phone Drop by the bar (2026-10-08).** GroupGiftBoard is now a small wooden bulletin board (Board 11x7 with a SurfaceGui "FREE GIFT / Join our group: +500 coins!", two posts, a cap, a 14-stud pink GlowRing, the Join Group prompt on the Board), replacing the gift-box clone; build_map makes the same. Verified in a playtest: the join prompt opens, ClaimGroupGift paid +500 once (a second claim paid nothing), and the board hid. (The Studio test profile now has GroupGiftClaimed = 1: use the test panel's "Reset to new player" to see the board again.) Phone Drop: a small dark "Drop" button inside the Forest Bar frame at Position (1, 10, 0.5, 0), as tall as the bar, shown while carrying (CarryController phoneDropButton); no Roblox action button for Drop any more.
+- **Leaderboards: Forests added, order Forests, Seeds, Strength, Speed (2026-10-08).** GameConfig.Leaderboards.Stats/Titles and LeaderboardService PLAYER_LIST in that order; a fourth lobby board (Stat ForestsCompleted) was cloned one step past the old Strength end in Studio and the Stats reassigned (the "SEEDS" label cap moved with the Seeds board); build_map has four boards at 312/324/336/348. Verified: the four boards draw left to right Top Forests, Top Seeds, Top Strength, Top Speed. The Roblox player list showed its columns as Speed, Strength, Forests, Seeds whatever the creation order; each column now carries a Priority NumberValue (1-4) and the first an IsPrimary BoolValue (the old PlayerList honored these). Not yet confirmed that the current list does.
+- **Training tip stops past Strength 200; PC drop hint (2026-10-08).** `Tutorial.RemindMaxStrength` (200): the "Tip: train to carry more and walk faster" reminder never shows once Strength is over it (TutorialController `trainingTip`). On computers the big "Q Drop Seeds" bar under the pick-up prompt is replaced by small "Q to drop" text (size 16) in the bottom right corner, still only while carrying; it's no longer clickable. Phones keep their Drop button. Synced; verified in a playtest: the hint sits 8 px from the bottom right corner, shown only while carrying.
+- **Test panel "Next world" ends the break (2026-10-08).** DevService `setTier` now calls the new `AwakeningService.stop()` first (endsAt 0, SpringMultiplier 0; `finish()` uses it too), so a forest filled with the test panel and then skipped no longer keeps its spring multiplier and 2X TRAINING sign into the next world. Normal play was never affected (finish() already cleared it). Verified in a playtest: during the break spring 2x; after Next world AwakeningEndsAt 0, SpringMultiplier 0, the sign off, tier 2.
+- **Coin sound (2026-10-08).** HUD COIN_SOUND_ID = 109742263473623 ("Coin sfx", 1.63 s, the user's pick; was "plop" 773858658). Volume 0.35, one per handful, at most one per 0.25 s, unchanged. Each copy is now destroyed when it ends (was Debris after 1 s, which cut the 1.63 s clip short). Pitch still climbs 4% per sound in a streak (gaps under 1.5 s), up to +32%. Synced; the user to judge by ear.
+- **Edge floor (2026-10-08).** Running off the island no longer drops you (FallService sent fallers to the spawn, a shortcut home). `Workspace.Map.EdgeFloor`: 64 invisible slabs (top 1.5, just under the walk plate's 1.55) from 355 out to 650 studs, each with an invisible 60-stud wall at 650; tagged WalkFloor. In build_map and placed in Studio. Verified in a playtest: a character ran from r 330 past the edge on the slabs (FloorMaterial Plastic, y steady) and stopped at r 648. FallService stays as the backstop. The islets (~550) are now reachable on foot.
+- **Bought world skips the roulette (2026-10-08).** AwakeningService.finish(): with a PickedTier the next forest starts as that world as soon as the break ends; no NextTier/TierRolls, so clients play no wheel and the roulette's wait is skipped. Unpicked breaks spin as before. Synced; verified in a playtest: with world 2 bought the break ended straight into tier 2 (TierRolls unchanged, no wheel); with no pick the wheel showed and TierRolls went up. (Test-panel DevCommand needs a number value even for endAwakening.)
+- **Group gift thanks only on a real claim (2026-10-08).** "Thanks for joining! +500 coins" showed on every join for players who had claimed before: the save loading set GroupGiftClaimed nil -> 1, which fired the banner. GroupGiftController now shows it only on 0 -> 1 (same guard as ShopController's level banners). No coins were ever paid twice. Synced; verified: no banner on join with GroupGiftClaimed 1, banner on 0 -> 1.
+- **Switched-off character gives nothing (2026-10-08).** PassService.handsSpeed now reads GameConfig.availableHandsPasses(), so owning the Lord of the Forest pass while `Features.LordOfTheForest` is false gives neither 5x pickup/planting nor the Lord outfit (OutfitService dresses from HandsSpeed). Verified in a playtest on the user's account (owns both passes): HandsSpeed 2, wearing the Forest Ranger outfit only.
+- **Full-grown tree is silent (2026-10-08).** The placeholder ping (electronicpingshort.wav) when a tree reaches full grown was removed (ForestController); the leaf burst stays. The ring-complete rising notes still use that ping. Synced.
+- **Boosts are developer products (2026-10-08, the user's call: game passes only for the Forest Ranger and the training areas).** 12 products created through Open Cloud at the passes' prices (Strength 2x-128x: 3717371274/78/79/80/83/84/87; Speed 1.5x-16x: 3717371291/93/94/95/97), ids in `GameConfig.Boosts` (was `BoostPasses`; each step keeps its old `PassId`). The 12 boost passes are off sale (Lord of the Forest was already); on sale now: Forest Ranger and the 7 training passes. A purchase goes through ProductService and `DataService.grantPurchase` into new profile fields `StrengthBoostBought` / `SpeedBoostBought` (default 1; a lower step bought after a higher one changes nothing). PassService publishes `StrengthBoost` / `SpeedBoost` = the higher of that and any old boost pass owned, so earlier buyers keep theirs (your own account owns them all, so in Studio and live you show 128x / 16x until the test panel resets it). HUD button and SHOP card prompt the product. Verified in a playtest: fake 4x Strength receipt -> bought 4, StrengthBoost 4, the HUD button moved on to 8x; test profile reset to 1 after. Roblox shows these (and the old passes) ~10% under the set prices to the user's account (36 for 39, 900 for 999): Roblox-side pricing, not the code.
+- **Training pass icons (2026-10-09).** `assets/icons/training_{2,5,10,25,50,75,100}x.png` (512x512, transparent corners): a glossy disc in that pad's color (build_map TIERS) with a 3D dumbbell and the multiplier in white Arial Black with a dark outline; our own design in the style of Build the Pyramid's gym pass icons, not a copy. Rendered with EEVEE in a separate "PassIcons" scene added to the open Blender file (trees.blend; the tree scene is untouched; not saved by me). Uploaded to the 7 training passes through Open Cloud (PATCH game-passes/{id}, -F imageFile=@file); each pass got its own new icon asset, in Roblox moderation (Pending/InReview) when uploaded. (PowerShell gotcha: an [ordered] hashtable with int keys indexes by position, which first put two icons on the wrong passes; fixed by re-uploading all 7.)
+- **Story intro off (2026-10-09).** `GameConfig.Features.TutorialIntro = false`: a new save starts at TutorialStep 1 (DataService load), so the camera sweep and its captions are skipped; the steps are unchanged. The test panel's "Replay tutorial intro" still plays it.
+- **Version line (2026-10-09).** Settings shows "Version N" (`game.PlaceVersion`, 0 in Studio) at the bottom, to spot an outdated server against the place's Version History.
+- **Two rings (2026-10-09, the user's idea).** `Grid.AheadRings` 1: besides the open ring, a plot one ring further in opens once the tree just outside it is full grown; the ring after that waits for the open ring to finish (so no spikes toward the hub). One shared rule, `Targeting.isOpenPlot`, used by ForestService (planting, overflow, bought seeds) and ForestController (rims; a tree finishing refreshes its neighbors). `devFillOpenRow` fills only the open ring. ForestState NextRingDone / NextRingTrees: the ring trunk fills the next ring's band too, at `TRUNK_NEXT_FADE` 0.45 transparency. `AheadRings = 0` restores the old one-ring rule. Checked: tests/TargetingCheck.luau passes in Studio; type check and selene clean. **Not yet playtested.**
+- **Uniform tiles experiment (2026-10-09, the user's idea).** `GameConfig.Forest.UniformTiles = true`: ForestController colors every slab and border MOSS_COLOR, widens slabs 3% (UNIFORM_SLAB_GROW) so the 0.5-stud gaps close, and shows no glowing rims; the target outline, guide arrow, tufts/flowers and ring wave stay. `false` = the normal tiles. Synced; not yet seen in a playtest.
+- **Tree preview on the target (2026-10-09, the user's idea, like Build the Pyramid's block preview).** While you carry acorns (not a special seed), an empty target tile shows this world's first Common tree at `PREVIEW_STAGE` 1 (about 4.6 studs tall), white (`PREVIEW_COLOR`) at `PREVIEW_TRANSPARENCY` 0.6 with a white Highlight outline (a tree-colored first version read as a real planted sapling), standing at the tile's center (TargetController `showPreview`, ForestController `previewTemplate`). Synced; not yet seen in a playtest.
+- **Preview of the next stage (2026-10-09, the user's ask).** On a started tree the target preview is that tree's next growth stage, at the real tree's pivot and size (`plot.treePivot`, `plot.treeSize`); nothing on a full-grown tree. `PREVIEW_TRANSPARENCY` now 0.4 (0.6 was too faint). Synced; not yet seen in a playtest.
+- **Preview outline black (2026-10-09, the user's call).** The preview's Highlight outline is `PREVIEW_OUTLINE` black at OutlineTransparency 0 (was white); the fill stays white at 0.4.
+- **Preview black; progress bar (2026-10-09, the user's calls).** The tree preview is black (`PREVIEW_COLOR`) with a black outline. The target's "12 / 40" label is now a slim bar (`METER_SIZE` 110x14 px) 2.5 studs above the tile (`METER_HEIGHT`, under the tree, always on top), filling green (`METER_COLOR`), gold when the next press finishes the tree; it shows text only while holding a special seed. Verified in a playtest: 2 of 5 seeds filled 40%, no errors. Also verified the two-ring rule: a ring-14 tile behind a full-grown tree targets and plants; one behind unfinished trees doesn't (target falls to ring 15, server refuses). With UniformTiles on, nothing shows which ring-14 tiles are open (open question to the user: glow only open tiles?).
+- **Uniform tiles reverted (2026-10-09, the user's call).** The experiment and its `Forest.UniformTiles` flag were removed; tiles are back to dirt/moss with grass borders and glowing rims on open plots.
+- **Tutorial teaches the buttons; shop spotlight; new end line (2026-10-09, the user's asks).** TutorialController `key()` picks the device's button (phone: the on-screen button, gamepad: X, else E): "Hold E at an acorn pile to grab acorns", "Press E to plant in the glowing tiles" (was the glowing-ring line), "Press E at a bench to carry more (x/20)", "Step on a treadmill to walk faster (x/20)", "Step into the shop's ring and buy an upgrade". During the Shop step, ShopController `refreshSpotlight` puts a pulsing gold ring and "Buy this first!" on the cheapest upgrade (a new player: Bulk Pickup, 50 coins, ties go to the first) and shades the other cards. End banner: "Tutorial finished! Work together with others to grow the forest!". Verified in a playtest (texts on steps 1-4 and 7, the spotlight with 2 cards shaded, no errors; the step was put back to 8).
+- **Spotlight always Bulk Pickup (2026-10-09, the user's call).** `GameConfig.Tutorial.ShopUpgrade = "BulkPickup"` replaces "the cheapest upgrade" in ShopController `refreshSpotlight`.
+- **Smaller, longer end banner (2026-10-09, the user's call).** `HUD.banner(text, color, size?, seconds?)`; "Tutorial finished!" uses `FINISHED_SIZE` 0.75 and `FINISHED_SECONDS` 4 (TutorialController; other banners 1 and 3).
+- **Arms up while carrying (2026-10-09, the user's ask, like Build the Pyramid).** TrainingController `poseCarriers` (every client, every player with Carried > 0 and not benching, each Stepped after the Animator, R15 shoulder/elbow Transforms): `CARRY_ARM_UP` 175°, `CARRY_ARM_OUT` 12°, `CARRY_ELBOW_IN` 8° (60° left the hands beside the head). Hands end about level with the top of the head, at the acorn's tip (CarryController HEAD_GAP 0.4). Checked on screen in a playtest.
+- **First-break guide (2026-10-09, the user's ask).** During a forest break (ForestState SpringMultiplier > 0), a player whose saved `SpringGuideSeen` is 0 gets the prompt "The forest is grown! Stand inside the World Tree to train {m}x" and the arrow to the hub center (TutorialController `springGuide`, ahead of the tutorial steps and the training tip). TrainingService saves `SpringGuideSeen = 1` the first time they stand in the Ancient Spring, so it never shows again. Verified in a playtest: prompt at the break, gone and saved (1) once inside. Your Studio save now has it at 1.
+- **No automatic Robux popup at locked stations (2026-10-09, the user's call, from the analytics: 44 of ~190 new players got it, 0 bought).** TrainingController `showLocked` now shows a banner "25x training unlocks at 15 forests (or in the SHOP)" instead of PromptGamePassPurchase; the passes stay in the Robux shop's Stations tab. Verified in a playtest on the 25x treadmill (no prompt, the banner shows).
+- **First-win changes (2026-10-09, from the analytics).**
+  - **First tree:** the first tree a player ever finishes (planting its last acorn) pays `Economy.FirstTreeCoins` 100 and shows confetti, "Your first tree! +100 coins" and the fanfare (ForestService `finish`, saved `FirstTreeDone`; TutorialController celebrates on 0 -> 1). Saves from before with 50+ acorns planted count as done.
+  - **Smaller solo trees:** `ForestSize.MinSeedsPerHex` 5 -> 3 (solo forest 1,620 acorns, first ring 252).
+  - **Bench:** "Jump to get off" (phones: "Tap Jump to get off") shows while you're on a bench (TrainingController `showBenchHint`), and tutorial step 4 starts with "Press Space / Tap Jump / Press A to get off the bench, then step on a treadmill" while you're still on it.
+  - **Test panel commands:** `setFirstTreeDone`, `setSpringGuideSeen`.
+  - **Verified in a playtest:** solo target 1,620 at 3 per tree; the bench hint on the 1x bench; with FirstTreeDone 0, finishing a tree gave +100 coins and the banner.
+- **Starter quests (2026-10-09, [docs/plans/Quests.md](plans/Quests.md)).** GameConfig `Quests` (8, with `questProgress`), saved `QuestIndex` / `TreesFinished` / `RingsHelped` (ForestService counts the last two), QuestService (`ClaimQuest` remote), QuestController (the card at the bottom of the stats column, the list window), a `Quests` analytics funnel. Verified in a playtest.
+- **Quest card restyled (2026-10-09, the user's call).** A dark vignette instead of the tan card (black, `VIGNETTE_DARKEST` 0.35 transparent on the left, fading out to the right), to match the plain stats column; the list window keeps the shop-style cards. New test command `setQuestIndex` (9 = all done). Checked on screen.
+- **Test panel: "Restart quests" and "Skip quest"** (2026-10-09) send `setQuestIndex` 1, or the next quest (past the last = all done, then 1).
+- **Planting Range reworked: one more tree per level (2026-10-09, the user's call).** `Upgrades.PlantingRange` is 4 levels of +28 studs (30 → 58 → 86 → 114 → 142: reach 1 → 5 trees), costing 300 / 2,400 / 19,200 / 153,600 coins (BaseCost 300, Growth 8); the shop says "Reach 2 trees → Reach 3 trees". Robux levels use the first 4 products (9 / 19 / 39 / 79 Robux; products 5-10 unused). Saves migrate (DataService VERSION 2): old level L becomes ceil(4L / 28), so 1-7 → 1 and 8-10 → 2, nobody loses reach. While carrying acorns, every other open plot in range is faintly lit (TargetController `showReach`, `REACH_TRANSPARENCY` 0.82). Not yet synced or playtested when written (Studio was in a playtest).
+- **Spring field and "INSIDE" (2026-10-09, the user's asks).**
+  - **The gold ring around the World Tree** already shows only during the break (GlowRingController BreakOnly; checked in a playtest: off with no break). It shows in Edit mode, and the live servers predate it.
+  - **Tall field:** its glowing wall is now 50 studs tall instead of 1.5 (`GlowRing.build(source, height?)`; build_map `SPRING_WALL_HEIGHT` 50). The wall in the saved place was raised directly, so build_map didn't need re-running.
+  - **INSIDE:** the spring sign reads "2X TRAINING" with "INSIDE" under it (SpringSignController, `INSIDE_SIZE` 60).
+  - **Verified in a playtest** during a break: the field is visible around the tree, and the sign is on with both lines. In the screenshot the first-break guide line ("The forest is grown! …") happened to cover the sign.
+  - **Save the place** to keep the taller wall.
+- **Smooth spring field (2026-10-09, the user's ask: too many lines).** New texture `field_wall` (tools/make_particle_textures.py, assets/textures/field_wall.png; decal 90102674279582, image 95604426031102): an even glow fading up, no streaks. Set on the spring wall's 4 beams in the saved place and in build_map (`SPRING_WALL_TEXTURE`); the small rings keep the streaky glow_wall. Checked on screen in Edit mode. Save the place.

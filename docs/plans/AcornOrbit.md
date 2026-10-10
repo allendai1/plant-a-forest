@@ -44,7 +44,7 @@ Bigger tiers merge the same way.
 | --- | --- |
 | `src/shared/GameConfig.luau` | `GiantSeedMilestones` is replaced by `AcornOrbit`: the merge size (6), each tier's acorn size, ring radius, ring height and orbit speed. These are visual numbers, but they sit next to the other carrying numbers. |
 | `src/client/Controllers/CarryController.luau` | The giant seed is replaced by the orbit:<br>- **Per player:** a list of acorn parts per tier, built from `Carried`, with merge and split animations when the count changes by 1 and a quick rebuild for bigger jumps.<br>- **Movement:** one `RenderStepped` loop moves every visible acorn with a single `BulkMoveTo`. Acorns are anchored and non-colliding, placed relative to the head each frame, and they skip players farther than about 150 studs away (no acorns shown) to keep phones fast.<br>- **Kept as they are:** the plant input and the mobile button. |
-| `docs/DESIGN_CHANGES.md`, `docs/ARCHITECTURE.md` | Note the change. The giant seed came from the GDD, which this replaces. |
+| [docs/DESIGN_CHANGES.md](../DESIGN_CHANGES.md), [docs/ARCHITECTURE.md](../ARCHITECTURE.md) | Note the change. The giant seed came from the GDD, which this replaces. |
 
 There are no server, remote or save changes: the server already sends `Carried`. The acorn model is the existing Blender acorn (`Assets.Acorn`), scaled per tier.
 

@@ -2,8 +2,9 @@
 -- PassService: which game passes each player owns (docs/plans/M2b.md, GUI.md).
 -- Ownership is only ever decided here on the server: checked with Roblox on join, and granted when
 -- the server-side PromptGamePassPurchaseFinished event reports a completed purchase.
--- Station passes unlock one training tier. Boost passes (GameConfig.BoostPasses) multiply Strength or
--- Speed gains; the highest owned one is published as the StrengthBoost / SpeedBoost attribute (1 = none).
+-- Station passes unlock one training tier. Boosts (GameConfig.Boosts) multiply Strength or Speed gains: the
+-- highest of the one bought as a developer product (saved, DataService's <stat>BoostBought) and any old boost
+-- game pass the player owns is published as the StrengthBoost / SpeedBoost attribute (1 = none).
 -- Hands passes (GameConfig.HandsPasses) speed up picking up and planting: HandsSpeed attribute (1 = none).
 
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -11,6 +12,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local DataService = require(script.Parent.DataService)
 
 local CHECK_ATTEMPTS = 3
 local RECHECK_SECONDS = 60
@@ -26,7 +28,7 @@ local function allPassIds(): { number }
 	for _, passId in GameConfig.StationPasses do
 		table.insert(ids, passId)
 	end
-	for _, ladder in { GameConfig.BoostPasses.Strength, GameConfig.BoostPasses.Speed } do
+	for _, ladder in { GameConfig.Boosts.Strength, GameConfig.Boosts.Speed } do
 		for _, step in ladder do
 			table.insert(ids, step.PassId)
 		end
@@ -39,8 +41,9 @@ end
 
 function PassService.boost(player: Player, stat: BoostStat): number
 	local mine = owned[player]
-	local best = 1
-	for _, step in GameConfig.BoostPasses[stat] do
+	local profile = DataService.get(player)
+	local best = if profile then profile[`{stat}BoostBought` :: DataService.StatKey] :: number else 1
+	for _, step in GameConfig.Boosts[stat] do
 		if mine and mine[step.PassId] then
 			best = math.max(best, step.Multiplier)
 		end
@@ -48,11 +51,12 @@ function PassService.boost(player: Player, stat: BoostStat): number
 	return best
 end
 
--- How many times faster than the base pace this player picks up and plants (1 = no Hands pass).
+-- How many times faster than the base pace this player picks up and plants (1 = no Hands pass). A character switched
+-- off by its feature flag counts for nothing, so its owners get neither its speed nor its outfit (OutfitService).
 function PassService.handsSpeed(player: Player): number
 	local mine = owned[player]
 	local best = 1
-	for _, step in GameConfig.HandsPasses do
+	for _, step in GameConfig.availableHandsPasses() do
 		if mine and mine[step.PassId] then
 			best = math.max(best, step.Multiplier)
 		end
@@ -96,6 +100,14 @@ end
 local function onPlayerAdded(player: Player)
 	owned[player] = {}
 	publish(player)
+	-- The saved boosts arrive when the profile loads (and change on a purchase): publish again.
+	for _, stat in { "Strength", "Speed" } do
+		player:GetAttributeChangedSignal(`{stat}BoostBought`):Connect(function()
+			if owned[player] then
+				publish(player)
+			end
+		end)
+	end
 	for _, passId in allPassIds() do
 		if passId ~= 0 then
 			task.spawn(check, player, passId)
@@ -118,8 +130,6 @@ function PassService.grant(player: Player, multiplier: number)
 	end
 end
 
--- Studio-only testing (DevService): pretend the player owns this boost pass (by its multiplier).
--- Multiplier 1 takes every boost pass of that stat away again.
 -- Studio-only testing (DevService): forget the station passes, so the stations lock like for a player
 -- without them (your own account owns every pass of your game).
 function PassService.revokeStations(player: Player)
@@ -131,18 +141,17 @@ function PassService.revokeStations(player: Player)
 	end
 end
 
+-- Studio-only testing (DevService): set the player's saved boost (1 = none) and forget the old boost passes of
+-- that stat (your own account owns every pass of your game), so the boost is exactly this.
 function PassService.grantBoost(player: Player, stat: BoostStat, multiplier: number)
 	local mine = owned[player]
 	if not mine then
 		return
 	end
-	for _, step in GameConfig.BoostPasses[stat] do
-		if multiplier == 1 then
-			mine[step.PassId] = nil
-		elseif step.Multiplier == multiplier then
-			mine[step.PassId] = true
-		end
+	for _, step in GameConfig.Boosts[stat] do
+		mine[step.PassId] = nil
 	end
+	DataService.set(player, `{stat}BoostBought` :: DataService.StatKey, math.max(1, multiplier))
 	publish(player)
 end
 

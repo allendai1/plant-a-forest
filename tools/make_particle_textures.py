@@ -113,6 +113,20 @@ def glow_wall(path):
     img.rotate(90, expand=True).save(path)  # the clear top to the left edge, the streaks running top to bottom
 
 
+def field_wall(path):
+    """The Ancient Spring's tall field (2026-10-09, the user's ask: the streaky glow_wall had too many lines at 50 studs
+    tall): the same layout as glow_wall, white, opaque at the foot fading smoothly to clear at the top, with no streaks."""
+    w, h = 64, 256
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    px = img.load()
+    for y in range(h):
+        v = y / (h - 1)  # 0 at the top, 1 at the bottom
+        a = min(1.0, 0.85 * v ** 2.2 + math.exp(-((1 - v) / 0.06) ** 2) * 0.6)  # a soft fade up and a bright foot
+        for x in range(w):
+            px[x, y] = (255, 255, 255, int(255 * a))
+    img.rotate(90, expand=True).save(path)  # turned like glow_wall: the clear top to the left edge
+
+
 def streak(path):
     """A thin soft vertical line for the glow ring's rising wisps (drawn along their velocity)."""
     n = 64
@@ -187,6 +201,7 @@ if __name__ == "__main__":
     guide_arrow_outlined("assets/textures/guide_arrow_outlined.png")
     glow_ring("assets/textures/glow_ring.png")
     glow_wall("assets/textures/glow_wall.png")
+    field_wall("assets/textures/field_wall.png")
     streak("assets/textures/streak.png")
     sun_rays("assets/textures/sun_rays.png")
     lightning("assets/textures/lightning.png")

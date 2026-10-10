@@ -46,4 +46,38 @@ assert(#Targeting.openNear(here + Vector3.new(0, 50, 0), 30, SIZE, ORIGIN, allOp
 assert(#Targeting.openNear(here, 50, SIZE, ORIGIN, allOpen) == 13, "50 studs should reach 13 hexes")
 assert(#Targeting.openNear(here, 56, SIZE, ORIGIN, allOpen) == 19, "56 studs should reach all 19")
 
+-- Two rings (isOpenPlot, 2026-10-09): ring 15 open, outside-in, one ring ahead.
+local inner = HexGrid.ring(14)[3]
+local outerNeighbor, farInner
+for _, n in HexGrid.neighbors(inner.q, inner.r) do
+	local d = HexGrid.distance(n.q, n.r, 0, 0)
+	if d == 15 then
+		outerNeighbor = n
+	elseif d == 13 then
+		farInner = n
+	end
+end
+assert(outerNeighbor and farInner, "a ring-14 hex touches rings 15 and 13")
+local grownSet: { [string]: boolean } = {}
+local grown = function(q: number, r: number): boolean
+	return grownSet[HexGrid.key(q, r)] == true
+end
+local function open(hex: HexGrid.Hex, ring: number, ahead: number): boolean
+	return Targeting.isOpenPlot(hex.q, hex.r, ring, false, 15, true, ahead, grown)
+end
+assert(open(outerNeighbor, 15, 1), "the open ring is open")
+assert(not open(inner, 14, 1), "ring 14 waits for a full-grown tree outside it")
+grownSet[HexGrid.key(outerNeighbor.q, outerNeighbor.r)] = true
+assert(open(inner, 14, 1), "a full-grown ring-15 tree opens the plot behind it")
+assert(not open(inner, 14, 0), "AheadRings 0 keeps only the open ring")
+grownSet[HexGrid.key(inner.q, inner.r)] = true
+assert(not open(farInner, 13, 1), "one ring ahead at most")
+assert(open(farInner, 13, 2), "two rings ahead with AheadRings 2")
+assert(not Targeting.isOpenPlot(inner.q, inner.r, 14, true, 15, true, 1, grown), "a full plot is never open")
+assert(not Targeting.isOpenPlot(outerNeighbor.q, outerNeighbor.r, 15, false, 0, true, 1, grown), "done: nothing open")
+-- Inner-first (ring 13 open): ring 14 is the ring ahead and opens behind full-grown ring-13 trees.
+assert(not Targeting.isOpenPlot(inner.q, inner.r, 14, false, 13, false, 1, grown), "inner-first: waits for ring 13")
+grownSet[HexGrid.key(farInner.q, farInner.r)] = true
+assert(Targeting.isOpenPlot(inner.q, inner.r, 14, false, 13, false, 1, grown), "inner-first: opens behind ring 13")
+
 return "Targeting: all checks passed"

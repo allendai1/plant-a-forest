@@ -10,8 +10,8 @@
 -- target and repeats every HoldRepeatSeconds (faster with a Hands pass) while held. While a ProximityPrompt is showing (the rack
 -- or a bench), E is left to the prompt.
 -- A special seed in hand (SeedBagController, docs/plans/SeedShop.md) is planted first with PlantSpecial.
--- While you carry seeds, a "Q Drop Seeds" button shows under the pick-up prompt: Q, the gamepad Y button or a tap
--- on it drops them all (DropSeeds), anywhere (2026-10-08, the user's call; it was lobby only).
+-- While you carry seeds, Q or the gamepad Y button drops them all (DropSeeds), anywhere (2026-10-08, the user's
+-- call; it was lobby only). Computers show a small "Q to drop" hint bottom right; phones get a Drop button.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -39,11 +39,12 @@ local SWAY = math.rad(5) -- the stack's gentle wobble
 local PUFF_COUNT = 14
 local PLANT_ACTION = "Plant"
 local DROP_ACTION = "DropSeeds"
-local DROP_SCREEN_Y = 0.97 -- the drop button's bottom edge, under the pick-up prompt (PromptController, 0.86)
-local DROP_HEIGHT = 56
-local PICKUP_HEIGHT = 86 -- PromptController's prompt (HEIGHT), before the screen scale
-local PICKUP_HALF_WIDTH = 158 -- half of "Pick Up Seeds" there: 30 + 62 key + 14 + 180 text + 30, halved
-local DIMMED = 0.6 -- mobile plant button transparency with nothing to plant
+local DROP_HINT_SIZE = 16 -- computers: the small "Q to drop" text in the bottom right corner
+local DROP_HINT_MARGIN = 8
+local BUTTON_FILL = 0.45 -- the mobile Plant button's dark fill transparency (like the jump button)
+local DIMMED = 0.75 -- the Plant button's fill transparency with nothing to plant; its label fades too
+local PLANT_BUTTON_SCALE = 0.9 -- the mobile Plant button's size, as a share of the jump button's (Roblox's is ~45 px)
+local DROP_BAR_GAP = 10 -- phones: the gap between the Forest Bar and the Drop button right of it, in the bar's pixels
 
 type Piece = { part: BasePart, rel: CFrame, size: Vector3 }
 type Acorn = {
@@ -281,6 +282,65 @@ local function onPlantAction(_: string, state: Enum.UserInputState, _: InputObje
 	return Enum.ContextActionResult.Sink
 end
 
+-- Phones: Roblox puts action buttons over the jump button; this moves one next to it instead, nearly the jump
+-- button's size so it's easy to find and hit (2026-10-08; Roblox's default was small). `offset` gives the button's
+-- top-left corner from the jump button's, for a button `size` pixels wide.
+-- They're dark rounds like the jump button instead of Roblox's see-through bubble (2026-10-08, the user's ask): no
+-- image (the jump button's has its arrow), a dark see-through circle with a soft white rim. Roblox swaps its bubble
+-- image back in on every press, so the image is cleared again whenever it changes.
+local styled: { [ImageButton]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+local function darkRound(button: ImageButton)
+	if styled[button] then
+		return
+	end
+	styled[button] = true
+	local function clear()
+		if button.Image ~= "" then
+			button.Image = ""
+		end
+	end
+	button:GetPropertyChangedSignal("Image"):Connect(clear)
+	clear()
+	button.BackgroundColor3 = Color3.new(0, 0, 0)
+	button.BackgroundTransparency = BUTTON_FILL
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.5, 0)
+	corner.Parent = button
+	local rim = Instance.new("UIStroke")
+	rim.Color = Color3.new(1, 1, 1)
+	rim.Thickness = 2
+	rim.Transparency = 0.55
+	rim.Parent = button
+end
+
+local function placeNearJump(action: string, offset: (jumpSize: Vector2, size: number) -> Vector2)
+	local button = ContextActionService:GetButton(action)
+	local touchGui = Players.LocalPlayer.PlayerGui:FindFirstChild("TouchGui")
+	local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
+	local frame = button and button.Parent
+	if not (button and jump and jump:IsA("GuiObject") and frame and frame:IsA("GuiObject")) then
+		return
+	end
+	darkRound(button)
+	local size = math.round(jump.AbsoluteSize.X * PLANT_BUTTON_SCALE)
+	button.Size = UDim2.fromOffset(size, size)
+	local spot = jump.AbsolutePosition + offset(jump.AbsoluteSize, size)
+	ContextActionService:SetPosition(
+		action,
+		UDim2.fromOffset(spot.X - frame.AbsolutePosition.X, spot.Y - frame.AbsolutePosition.Y)
+	)
+end
+
+-- Plant: up and to the left of the jump button, where the right thumb rests (2026-10-08, the user's ask; it was
+-- level with the jump button, too low). A full width left, clear of the Strength boost label above the jump button.
+local function plantSpot(_: Vector2, size: number): Vector2
+	return Vector2.new(-size, -(size + 12))
+end
+
+local function placeButtons()
+	placeNearJump(PLANT_ACTION, plantSpot)
+end
+
 local function bindPlanting()
 	ProximityPromptService.PromptShown:Connect(function()
 		promptsShown += 1
@@ -297,27 +357,10 @@ local function bindPlanting()
 		Enum.UserInputType.MouseButton1
 	)
 	ContextActionService:SetTitle(PLANT_ACTION, "Plant")
-	-- Phones: Roblox puts action buttons over the jump button; put Plant just left of it instead (2026-10-07).
-	local function placeButton()
-		local button = ContextActionService:GetButton(PLANT_ACTION)
-		local touchGui = Players.LocalPlayer.PlayerGui:FindFirstChild("TouchGui")
-		local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
-		local frame = button and button.Parent
-		if not (button and jump and jump:IsA("GuiObject") and frame and frame:IsA("GuiObject")) then
-			return
-		end
-		-- Up and to the left of the jump button, where the right thumb rests (2026-10-08, the user's ask; it was level
-		-- with the jump button, too low).
-		local spot = jump.AbsolutePosition + Vector2.new(-button.AbsoluteSize.X * 0.75, -(button.AbsoluteSize.Y + 12))
-		ContextActionService:SetPosition(
-			PLANT_ACTION,
-			UDim2.fromOffset(spot.X - frame.AbsolutePosition.X, spot.Y - frame.AbsolutePosition.Y)
-		)
-	end
 	task.spawn(function()
 		local camera = workspace.CurrentCamera
 		while true do -- the touch controls appear a moment after joining, and move when the screen turns
-			placeButton()
+			placeButtons()
 			if camera then
 				camera:GetPropertyChangedSignal("ViewportSize"):Wait()
 				task.wait(0.2)
@@ -329,7 +372,7 @@ local function bindPlanting()
 	task.spawn(function()
 		for _ = 1, 8 do -- and again for the first few seconds, until the touch controls exist
 			task.wait(1)
-			placeButton()
+			placeButtons()
 		end
 	end)
 	-- A release can be lost when the window loses focus; never keep planting after that.
@@ -342,86 +385,89 @@ local function bindPlanting()
 			tryPlant()
 		end
 	end)
-	-- Dim the mobile button when there's nothing to plant into.
-	local dimmed: boolean? = nil
+	-- Dim the mobile button when there's nothing to plant into. (Set every frame: darkRound can restyle it later.)
 	RunService.Heartbeat:Connect(function()
 		local button = ContextActionService:GetButton(PLANT_ACTION)
 		local want = if SeedBagController.held()
 			then not TargetController.canPlantSpecial()
 			else TargetController.getTarget() == nil or carriedOf(Players.LocalPlayer) == 0
-		if button and want ~= dimmed then
-			dimmed = want
-			button.ImageTransparency = if want then DIMMED else 0
+		if button then
+			button.BackgroundTransparency = if want then DIMMED else BUTTON_FILL
+			local title = button:FindFirstChildWhichIsA("TextLabel")
+			if title then
+				title.TextTransparency = if want then 0.4 else 0
+			end
 		end
 	end)
 end
 
--- The "Q Drop Seeds" button: the prompts' dark panel with a key box, shown while you carry seeds.
+-- Phones: a small dark "Drop" button just right of the Forest Bar (at the bottom there), as tall as the bar, with a
+-- gap (2026-10-08, the user's ask: by the jump button it was too easy to hit by mistake). It lives in the bar, so
+-- it follows the bar's size and spot; it's made once the HUD has built the bar.
+local function phoneDropButton(onDrop: () -> ()): TextButton
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local bar = playerGui:FindFirstChild("ForestBar", true)
+	while not (bar and bar:IsA("GuiObject")) do
+		task.wait(0.5)
+		bar = playerGui:FindFirstChild("ForestBar", true)
+	end
+	local button = Instance.new("TextButton")
+	button.Name = "Drop"
+	button.Text = ""
+	button.AutoButtonColor = false
+	button.Visible = false
+	button.AnchorPoint = Vector2.new(0, 0.5)
+	button.Position = UDim2.new(1, DROP_BAR_GAP, 0.5, 0)
+	button.Size = UDim2.new(0, 0, 1, 0) -- the bar's height
+	button.AutomaticSize = Enum.AutomaticSize.X
+	button.BackgroundColor3 = Color3.fromRGB(28, 22, 16)
+	button.BackgroundTransparency = 0.2
+	button.Parent = bar
+	UIStyle.corner(button, 16)
+	UIStyle.stroke(button, 4, UIStyle.BLACK, true)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 18), UDim.new(0, 18)
+	pad.Parent = button
+	UIStyle.list(button, true, 0, Enum.HorizontalAlignment.Center).VerticalAlignment = Enum.VerticalAlignment.Center
+	UIStyle.text(button, "Drop", 28)
+	UIStyle.clicky(button)
+	button.Activated:Connect(onDrop)
+	return button
+end
+
+-- The drop hint, shown while you carry seeds. On a computer: small "Q to drop" text in the bottom right corner
+-- (2026-10-08, the user's ask: the big "Q Drop Seeds" bar in the middle made dropping look like the main action).
+-- On phones: phoneDropButton, right of the Forest Bar.
 local function bindDropping()
 	local drop = Remotes.event("DropSeeds")
-	local screen = Instance.new("ScreenGui")
-	screen.Name = "DropSeeds"
-	screen.ResetOnSpawn = false
-	screen.Enabled = false
-	local scale = UIStyle.screenScale()
 	local touch = UIStyle.isTouch()
-	local panel = Instance.new("TextButton")
-	panel.Name = "Drop"
-	panel.Text = ""
-	panel.AutoButtonColor = false
+	local screen: ScreenGui? = nil
+	local phoneButton: TextButton? = nil
 	if touch then
-		-- Phones: a plain "Drop" button right of the pick-up prompt, the same height (2026-10-08, the user's ask; it
-		-- was a "TAP Drop Seeds" bar at the bottom). PromptController draws that prompt centered with its bottom at
-		-- SCREEN_Y_TOUCH (0.7), about PICKUP_HALF_WIDTH wide each side of the middle, PICKUP_HEIGHT tall.
-		panel.AnchorPoint = Vector2.new(0, 0.5)
-		panel.Position = UDim2.new(0.5, (PICKUP_HALF_WIDTH + 14) * scale, 0.7, -PICKUP_HEIGHT / 2 * scale)
-		panel.Size = UDim2.fromOffset(0, PICKUP_HEIGHT)
+		task.spawn(function()
+			phoneButton = phoneDropButton(function()
+				if carriedOf(Players.LocalPlayer) > 0 then
+					drop:FireServer()
+				end
+			end)
+		end)
 	else
-		panel.AnchorPoint = Vector2.new(0.5, 1)
-		panel.Position = UDim2.fromScale(0.5, DROP_SCREEN_Y)
-		panel.Size = UDim2.fromOffset(0, DROP_HEIGHT)
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "DropSeeds"
+		gui.ResetOnSpawn = false
+		gui.Enabled = false
+		local hint = UIStyle.text(gui, "Q to drop", DROP_HINT_SIZE)
+		hint.Name = "Drop"
+		hint.AnchorPoint = Vector2.new(1, 1)
+		hint.Position = UDim2.new(1, -DROP_HINT_MARGIN, 1, -DROP_HINT_MARGIN)
+		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+		screen = gui
 	end
-	panel.AutomaticSize = Enum.AutomaticSize.X
-	panel.BackgroundColor3 = Color3.fromRGB(28, 22, 16)
-	panel.BackgroundTransparency = 0.2
-	panel.Parent = screen
-	local fit = Instance.new("UIScale")
-	fit.Scale = scale
-	fit.Parent = panel
-	local height = if touch then PICKUP_HEIGHT else DROP_HEIGHT
-	UIStyle.corner(panel, height // 2 - 6)
-	UIStyle.stroke(panel, 3, UIStyle.BLACK, true)
-	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, if touch then 26 else 18), UDim.new(0, if touch then 26 else 22)
-	pad.Parent = panel
-	UIStyle.list(panel, true, 12)
-	if touch then
-		UIStyle.text(panel, "Drop", 32)
-	else
-		local key = Instance.new("Frame")
-		key.Size = UDim2.fromOffset(DROP_HEIGHT - 14, DROP_HEIGHT - 14)
-		key.BackgroundColor3 = Color3.fromRGB(12, 10, 8)
-		key.Parent = panel
-		UIStyle.corner(key, 10)
-		local letter = UIStyle.text(key, "Q", 28)
-		letter.AnchorPoint = Vector2.new(0.5, 0.5)
-		letter.Position = UDim2.fromScale(0.5, 0.5)
-		local words = UIStyle.text(panel, "Drop Seeds", 26)
-		words.LayoutOrder = 2
-	end
-	UIStyle.clicky(panel)
-	screen.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-	local function dropNow()
-		if carriedOf(Players.LocalPlayer) > 0 then
-			drop:FireServer()
-		end
-	end
-	panel.Activated:Connect(dropNow)
 	local bound = false
 	local function onDropAction(_: string, state: Enum.UserInputState, _: InputObject): Enum.ContextActionResult
-		if state == Enum.UserInputState.Begin then
-			dropNow()
+		if state == Enum.UserInputState.Begin and carriedOf(Players.LocalPlayer) > 0 then
+			drop:FireServer()
 		end
 		return Enum.ContextActionResult.Sink
 	end
@@ -429,7 +475,12 @@ local function bindDropping()
 	task.spawn(function()
 		while true do
 			local show = carriedOf(Players.LocalPlayer) > 0
-			screen.Enabled = show
+			if screen then
+				screen.Enabled = show
+			end
+			if phoneButton then
+				phoneButton.Visible = show
+			end
 			if show ~= bound then
 				bound = show
 				if show then

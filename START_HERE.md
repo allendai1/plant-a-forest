@@ -1,4 +1,4 @@
-> **Update 2026-10-06:** the project is past M4 and no longer uses Rojo or git. For the current state and workflow, read `docs/HANDOFF.md`. The setup steps below are from the original handoff.
+> **Update 2026-10-06:** the project is past M4 and no longer uses Rojo or git. For the current state and workflow, read [docs/HANDOFF.md](docs/HANDOFF.md). The setup steps below are from the original handoff.
 
 # Starting Plant the Forest in Claude Code
 
@@ -6,9 +6,9 @@
 
 | File | What it is |
 | --- | --- |
-| `CLAUDE.md` | Project context and rules. Claude Code reads this automatically every session. |
-| `docs/GDD.md` | The full game design doc, exported from the live doc. |
-| `docs/MVP_PLAN.md` | Build order, milestone by milestone, with checkboxes and "done when" tests. |
+| [CLAUDE.md](CLAUDE.md) | Project context and rules. Claude Code reads this automatically every session. |
+| [docs/GDD.md](docs/GDD.md) | The full game design doc, exported from the live doc. |
+| [docs/MVP_PLAN.md](docs/MVP_PLAN.md) | Build order, milestone by milestone, with checkboxes and "done when" tests. |
 | `docs/Balancing.xlsx` | The balancing spreadsheet (stat curves, forest sizes, upgrade costs). |
 | `src/shared/GameConfig.luau` | Every balance number and the stat formulas, ready to use in game code. |
 | `src/shared/HexGrid.luau` | Hex grid math (rings, world positions, distances). |
@@ -30,7 +30,7 @@ CLAUDE.md tells Claude Code to plan before it builds, so every step follows the 
 1. You ask it to plan a milestone.
 2. It writes the plan to `docs/plans/` and stops.
 3. You read the plan, ask for changes or approve it.
-4. It builds, tests, ticks the boxes in `docs/MVP_PLAN.md`, and stops again.
+4. It builds, tests, ticks the boxes in [docs/MVP_PLAN.md](docs/MVP_PLAN.md), and stops again.
 5. You run the milestone's "Done when" test in Studio, then ask for the next plan.
 
 ## First message to paste
@@ -55,4 +55,4 @@ When a milestone is done and you've tested it in Studio:
 
 ## When the design changes
 
-The live design doc is the master copy. If you change the design there, re-export it to `docs/GDD.md` (or tell Claude Code what changed) so the two don't drift apart. Balance changes go in `GameConfig.luau` and the spreadsheet together.
+The live design doc is the master copy. If you change the design there, re-export it to [docs/GDD.md](docs/GDD.md) (or tell Claude Code what changed) so the two don't drift apart. Balance changes go in `GameConfig.luau` and the spreadsheet together.

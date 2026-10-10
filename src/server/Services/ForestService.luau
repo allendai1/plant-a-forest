@@ -13,6 +13,8 @@
 -- attribute) and, for the rarest, everyone's (ForestState ServerTreeBoost, with TreeBoostBy /
 -- TreeBoostSeed / TreeBoosts for the banner). TrainingService reads them through ownerBoost() and
 -- serverBoost(); reset() ends them with the forest.
+-- Rounds (GameConfig.Rounds, 2026-10-09): a server's first forests open only the inner 2, 4, then 6 rings; plots
+-- outside the round have row 0 and never open. ForestState Round / RingCount / LastRing tell clients.
 -- Worlds: setTier() picks which tier the next forest is (AwakeningService's roulette). The tier sets what the
 -- free acorns grow (Tiers[].Commons) and multiplies planting coins (CoinMultiplier); ForestState TierId.
 
@@ -33,6 +35,7 @@ local EconomyService = require(script.Parent.EconomyService)
 local FriendService = require(script.Parent.FriendService)
 local PassService = require(script.Parent.PassService)
 local BadgeAwardService = require(script.Parent.BadgeAwardService)
+local TreeCounterService = require(script.Parent.TreeCounterService)
 local Guard = require(script.Parent.Parent.Guard)
 local Analytics = require(script.Parent.Parent.Analytics)
 
@@ -66,6 +69,9 @@ local ForestService = {}
 
 local plots: { Plot } = {}
 local plotByKey: { [string]: number } = {}
+-- The old forest outside the field (GameConfig.Field, 2026-10-09): q, r and ground height of every spot on the town's
+-- side that would be a plot, sent with the snapshot; clients stand full-grown trees there (ForestController).
+local backdrop: { number } = {}
 local rows: { Row } = {}
 local dirty: { [number]: boolean } = {}
 local dirtyCount = 0
@@ -90,6 +96,7 @@ local serverBoostSum = 0
 local treeBoosts = 0 -- server-wide boosts started this server (the banner's counter)
 local specialsPlanted: { [number]: number } = {} -- special seeds each player planted this forest
 local tierIndex = 1 -- index into GameConfig.Tiers: the world this forest is in
+local ringPlanters: { [number]: { [number]: boolean } } = {} -- row -> UserIds who planted in it (RingsHelped)
 
 local function findCenter(): BasePart
 	local tagged = CollectionService:GetTagged(CENTER_TAG)
@@ -132,6 +139,9 @@ local function buildPlots()
 		if radius > grid.HubRings then
 			for j, hex in ring do
 				local flat = HexGrid.toWorld(hex.q, hex.r, grid.HexSize, center.Position)
+				local offset = flat - center.Position
+				-- Outside the field (GameConfig.Field): no plot, a tree of the old forest instead.
+				local outside = not GameConfig.inField(math.deg(math.atan2(offset.Z, offset.X)))
 				local blocked = false
 				for _, part in noPlant do
 					if insideFootprint(part, flat) then
@@ -147,7 +157,11 @@ local function buildPlots()
 						params
 					)
 				-- No ground under the hex, or terrain water: not plantable.
-				if hit and hit.Material ~= Enum.Material.Water then
+				if hit and hit.Material ~= Enum.Material.Water and outside then
+					table.insert(backdrop, hex.q)
+					table.insert(backdrop, hex.r)
+					table.insert(backdrop, hit.Position.Y)
+				elseif hit and hit.Material ~= Enum.Material.Water then
 					local index = #plots + 1
 					plots[index] = {
 						index = index,
@@ -173,11 +187,16 @@ end
 -- This server's ring order: from the outer ring in (true) or from the hub out (false). GameConfig.Grid.OutsideIn,
 -- or a weighted pick per server while the layout A/B test runs (GameConfig.Experiments.LayoutTest).
 local outsideIn = GameConfig.Grid.OutsideIn
+local round = 1 -- this server's forest number (GameConfig.Rounds)
+local wholeRound = false -- every ring of this small round is open at once (Rounds.OpenWholeRound)
 
--- Orders the rows: one per ring, outside-in (outsideIn) or inside-out.
+-- Orders the rows: one per ring, outside-in (outsideIn) or inside-out, only the round's rings (GameConfig.Rounds).
+-- Plots outside the round get row 0 and never open.
 local function buildRows()
+	table.clear(rows)
 	local grid = GameConfig.Grid
 	local inner, outer = grid.HubRings + 1, grid.HubRings + grid.ForestRings
+	local limit = if GameConfig.Rounds.Enabled then GameConfig.Rounds.Rings[round] or math.huge else math.huge
 	local plantable: { [number]: number } = {}
 	for _, plot in plots do
 		plantable[plot.ring] = (plantable[plot.ring] or 0) + 1
@@ -186,14 +205,41 @@ local function buildRows()
 	for i = 0, outer - inner do
 		local ring = if outsideIn then outer - i else inner + i
 		local count = plantable[ring]
-		if count then -- a ring with nothing to plant is skipped
+		if count and #rows < limit then -- a ring with nothing to plant is skipped
 			table.insert(rows, { ring = ring, plantable = count, finished = 0 })
 			index[ring] = #rows
 		end
 	end
 	for _, plot in plots do
-		plot.row = index[plot.ring]
+		plot.row = index[plot.ring] or 0
 	end
+end
+
+-- The trees in this forest (the round's rings).
+local function plantablePlots(): number
+	local count = 0
+	for _, row in rows do
+		count += row.plantable
+	end
+	return count
+end
+
+-- The round, for clients and analytics: Round, RingCount ("Ring 3 of 9"), LastRing (the round's last ring, 0 when
+-- every ring is in) and Layout (the analytics' variant: "Round 2" while rounds are on).
+local function publishRound()
+	forestState:SetAttribute("Round", round)
+	forestState:SetAttribute("RingCount", #rows)
+	local rounds = GameConfig.Rounds
+	local small = rounds.Enabled and rounds.Rings[round] ~= nil
+	wholeRound = small and rounds.OpenWholeRound
+	forestState:SetAttribute("WholeRound", wholeRound)
+	forestState:SetAttribute("LastRing", if small and #rows > 0 then rows[#rows].ring else 0)
+	-- Few values for the analytics fields: every full-size round is "Round 4+".
+	local layout = if outsideIn then "OuterFirst" else "InnerFirst"
+	if rounds.Enabled then
+		layout = if small then `Round {round}` else `Round {#rounds.Rings + 1}+`
+	end
+	forestState:SetAttribute("Layout", layout)
 end
 
 local function plotAt(q: number, r: number): Plot?
@@ -201,8 +247,29 @@ local function plotAt(q: number, r: number): Plot?
 	return if index then plots[index] else nil
 end
 
+local function isGrownAt(q: number, r: number): boolean
+	local plot = plotAt(q, r)
+	return plot ~= nil and plot.seeds >= seedsPerHex
+end
+
+-- The open ring, and since 2026-10-09 the plots just behind its full-grown trees (Grid.AheadRings).
 local function isOpen(plot: Plot): boolean
-	return plot.row == openRow and plot.seeds < seedsPerHex
+	local row = rows[openRow]
+	if plot.row == 0 then
+		return false -- outside this round
+	elseif wholeRound then
+		return row ~= nil and plot.seeds < seedsPerHex -- a small round: all of it, until the forest is complete
+	end
+	return Targeting.isOpenPlot(
+		plot.q,
+		plot.r,
+		plot.ring,
+		plot.seeds >= seedsPerHex,
+		if row then row.ring else 0,
+		outsideIn,
+		GameConfig.Grid.AheadRings,
+		isGrownAt
+	)
 end
 
 local function isOpenAt(q: number, r: number): boolean
@@ -236,6 +303,15 @@ local function advanceRows()
 	end
 	for i = before, openRow - 1 do
 		Analytics.ringCompleted(i, rows[i].plantable)
+		local planters = ringPlanters[i]
+		if planters then
+			for userId in planters do
+				local planter = Players:GetPlayerByUserId(userId)
+				if planter then
+					DataService.add(planter, "RingsHelped", 1) -- the "Help finish a ring" quest
+				end
+			end
+		end
 	end
 	if openRow ~= before then
 		-- The OpenRow attribute is set in flush(), after the batch with the finishing seeds.
@@ -281,8 +357,18 @@ end
 local function finish(plot: Plot, player: Player?)
 	if player then
 		Analytics.treeFinished(player) -- they planted its last seed
+		DataService.add(player, "TreesFinished", 1) -- the "Grow 3 trees" quest
+		local profile = DataService.get(player)
+		if profile and profile.FirstTreeDone == 0 then
+			-- Their first tree ever: the client celebrates when FirstTreeDone turns 1 (TutorialController).
+			local coins = GameConfig.Economy.FirstTreeCoins
+			DataService.add(player, "Coins", coins)
+			DataService.set(player, "FirstTreeDone", 1)
+			Analytics.earned(player, coins, "FirstTree", Enum.AnalyticsEconomyTransactionType.Onboarding)
+		end
 	end
 	rows[plot.row].finished += 1
+	TreeCounterService.add(1) -- the hub's counter of every tree grown
 	startTreeBoost(plot)
 	advanceRows()
 end
@@ -332,6 +418,9 @@ local function plantInto(plot: Plot, player: Player, count: number, special: num
 	DataService.add(player, "SeedsPlanted", added)
 	local mine = (forestPlanted[player.UserId] or 0) + added
 	forestPlanted[player.UserId] = mine
+	local planters = ringPlanters[plot.row] or {}
+	ringPlanters[plot.row] = planters
+	planters[player.UserId] = true
 	player:SetAttribute("ForestPlanted", mine)
 	Analytics.onboarding(player, "PlantedSeed")
 	markDirty(plot)
@@ -461,7 +550,7 @@ local function snapshot(): Types.Snapshot
 		table.insert(layout, plot.position.Y)
 		stateOf(plot, state)
 	end
-	return { seq = seq, layout = layout, state = state }
+	return { seq = seq, layout = layout, state = state, backdrop = backdrop }
 end
 
 local function flush()
@@ -488,6 +577,10 @@ local function flush()
 	local ring = rows[openRow]
 	forestState:SetAttribute("RingDone", if ring then ring.finished else 0)
 	forestState:SetAttribute("RingTrees", if ring then ring.plantable else 0)
+	-- The next ring's early progress (two rings, 2026-10-09): the trunk fills its band too.
+	local nextRing = if ring and GameConfig.Grid.AheadRings > 0 then rows[openRow + 1] else nil
+	forestState:SetAttribute("NextRingDone", if nextRing then nextRing.finished else 0)
+	forestState:SetAttribute("NextRingTrees", if nextRing then nextRing.plantable else 0)
 	-- Also after the batch, so clients have the last tree before the forest complete moment starts.
 	if completePending then
 		completePending = false
@@ -548,7 +641,7 @@ local function sizeForest()
 	local tier = GameConfig.Tiers[tierIndex]
 	seedsPerHex = GameConfig.seedsPerHexFor(tier, #Players:GetPlayers(), #plots)
 	forestState:SetAttribute("SeedsPerHex", seedsPerHex) -- worlds and server sizes differ
-	forestState:SetAttribute("Target", GameConfig.forestTarget(#plots, seedsPerHex))
+	forestState:SetAttribute("Target", GameConfig.forestTarget(plantablePlots(), seedsPerHex)) -- the round's trees
 end
 
 function ForestService.setTier(index: number)
@@ -576,9 +669,9 @@ function ForestService.reset()
 		plot.treeSeed = 0
 		markDirty(plot)
 	end
-	for _, row in rows do
-		row.finished = 0
-	end
+	round += 1
+	buildRows() -- the next round's rings (GameConfig.Rounds), all unfinished
+	publishRound()
 	totalSeeds = 0
 	openRow = 1
 	completePending = false
@@ -586,6 +679,7 @@ function ForestService.reset()
 	table.clear(ownerBoostSums)
 	table.clear(specialsPlanted)
 	table.clear(forestPlanted) -- forest credit starts again
+	table.clear(ringPlanters)
 	serverBoostSum = 0
 	forestState:SetAttribute("ServerTreeBoost", 1)
 	for _, player in Players:GetPlayers() do
@@ -611,7 +705,7 @@ end
 function ForestService.devFillOpenRow(leaveEmpty: number)
 	local open: { Plot } = {}
 	for _, plot in plots do
-		if isOpen(plot) then
+		if plot.row == openRow and isOpen(plot) then -- the open ring only, not the plots opened ahead of it
 			table.insert(open, plot)
 		end
 	end
@@ -631,7 +725,7 @@ end
 
 -- Fills plots row by row, in opening order, until the bar reaches `fraction` of the target.
 function ForestService.devFillForest(fraction: number)
-	local goal = math.floor(math.clamp(fraction, 0, 1) * #plots * seedsPerHex)
+	local goal = math.floor(math.clamp(fraction, 0, 1) * plantablePlots() * seedsPerHex)
 	while totalSeeds < goal do
 		local plot: Plot? = nil
 		for _, candidate in plots do
@@ -675,8 +769,51 @@ function ForestService.init()
 		preview:Destroy()
 	end
 	center = findCenter()
+	-- The town's side (GameConfig.Field): its trails lead nowhere now (2026-10-09, the user's ask), so they go for this
+	-- server: the visible trail, its no-planting strip and the bridge at its end (the floating islet stays). Before
+	-- the plots, so the old forest fills their spots too.
+	local function outsideField(at: Vector3): boolean
+		local offset = at - center.Position
+		return not GameConfig.inField(math.deg(math.atan2(offset.Z, offset.X)))
+	end
+	if GameConfig.Field.Enabled then
+		local map = workspace:FindFirstChild("Map")
+		local lobby = map and map:FindFirstChild("Lobby")
+		local island = map and map:FindFirstChild("Island")
+		local walkways = map and map:FindFirstChild("Walkways")
+		for _, list in { lobby and lobby:GetChildren(), island and island:GetChildren(), walkways and walkways:GetChildren() } do
+			for _, item in list or {} do
+				local trail = item.Name == "LobbyPath" or item.Name == "Bridge" or item.Parent == walkways
+				local at = if item:IsA("Model")
+					then item:GetBoundingBox().Position
+					elseif item:IsA("BasePart") then item.Position
+					else nil
+				if trail and at and outsideField(at) then
+					item:Destroy()
+				end
+			end
+		end
+	end
 	buildPlots()
-	if GameConfig.Experiments.LayoutTest then
+	-- The field's side of the hub (GameConfig.Field): the dispensers facing away from it go for this server, and
+	-- the spawn turns to face the World Tree, so a new player looks across the hub at the forest.
+	if GameConfig.Field.Enabled then
+		for _, rack in CollectionService:GetTagged("SeedRack") do
+			local at = if rack:IsA("Model") then rack:GetPivot().Position elseif rack:IsA("BasePart") then rack.Position else nil
+			if at and outsideField(at) then
+				rack:Destroy()
+			end
+		end
+		for _, spawn in workspace:GetDescendants() do
+			if spawn:IsA("SpawnLocation") then
+				local at = spawn.Position
+				spawn.CFrame = CFrame.lookAt(at, Vector3.new(center.Position.X, at.Y, center.Position.Z))
+			end
+		end
+	end
+	if GameConfig.Rounds.Enabled then
+		outsideIn = false -- rounds grow from the hub out
+	elseif GameConfig.Experiments.LayoutTest then
 		outsideIn = rng:NextNumber() < GameConfig.Experiments.OuterFirstShare
 	end
 	buildRows()
@@ -684,7 +821,7 @@ function ForestService.init()
 	local tier = GameConfig.Tiers[1]
 	-- Sized for the players here at start (usually none yet: a server's first forest is a small one).
 	seedsPerHex = GameConfig.seedsPerHexFor(tier, #Players:GetPlayers(), #plots)
-	local target = GameConfig.forestTarget(#plots, seedsPerHex)
+	local target = GameConfig.forestTarget(plantablePlots(), seedsPerHex)
 
 	forestState = Instance.new("Folder")
 	forestState.Name = "ForestState"
@@ -692,13 +829,14 @@ function ForestService.init()
 	forestState:SetAttribute("Seeds", 0)
 	forestState:SetAttribute("Target", target)
 	forestState:SetAttribute("SeedsPerHex", seedsPerHex)
-	forestState:SetAttribute("RingCount", #rows) -- for "Ring 3 of 9 complete!"
-	-- The ring order, for the clients' ring numbers and every analytics event (the layout A/B test).
+	-- The ring order, for the clients' ring numbers; the round and its rings (and Layout, for every analytics event).
 	forestState:SetAttribute("OutsideIn", outsideIn)
-	forestState:SetAttribute("Layout", if outsideIn then "OuterFirst" else "InnerFirst")
+	publishRound()
 	forestState:SetAttribute("OpenRow", openRowValue())
 	forestState:SetAttribute("RingDone", 0)
 	forestState:SetAttribute("RingTrees", if rows[openRow] then rows[openRow].plantable else 0)
+	forestState:SetAttribute("NextRingDone", 0)
+	forestState:SetAttribute("NextRingTrees", 0)
 	-- Clients place tiles from this, so they don't depend on the ForestCenter part streaming in.
 	forestState:SetAttribute("Center", center.Position)
 	forestState:SetAttribute("ServerTreeBoost", 1)

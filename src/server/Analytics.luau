@@ -33,6 +33,9 @@
 --   LeftAt on every leave (value: the visit's minutes; fields: where in the forest, i.e. the open ring and how far
 --   along it was, or the break; world and layout; the player-count band).
 -- - Every forest event carries the server's layout (ForestState Layout: the A/B test, GameConfig.Experiments).
+-- - The first minutes (2026-10-09): LeftAt names the tutorial step instead of the ring while the player is in
+--   the tutorial, TutorialStepSeconds times each step, LockedTry says which locked station and which tutorial
+--   step, and visits are timed from the join (they used to start at the first playtime check, up to 30 s late).
 
 local AnalyticsService = game:GetService("AnalyticsService")
 local HttpService = game:GetService("HttpService")
@@ -77,6 +80,8 @@ local logged: { [Player]: { [string]: boolean } } = {}
 local planting: { [Player]: number } = {} -- planting coins not sent yet
 type Session = { id: string, started: number, sessionStep: number, lifetimeStep: number }
 local sessions: { [Player]: Session } = {}
+local joinedAt: { [Player]: number } = {} -- the visit's clock starts here, not at the first playtime check
+local stepStartedAt: { [Player]: number } = {} -- when they reached their tutorial step (or joined)
 -- ForestLoop: the forest now running, and each player's progress in it.
 local forestRound = HttpService:GenerateGUID(false)
 type ForestProgress = {
@@ -222,7 +227,12 @@ local function checkPlaytime(player: Player)
 		while LIFETIME_MINUTES[passed + 1] and lifetime >= LIFETIME_MINUTES[passed + 1] do
 			passed += 1
 		end
-		session = { id = HttpService:GenerateGUID(false), started = os.clock(), sessionStep = 0, lifetimeStep = passed }
+		session = {
+			id = HttpService:GenerateGUID(false),
+			started = joinedAt[player] or os.clock(),
+			sessionStep = 0,
+			lifetimeStep = passed,
+		}
 		sessions[player] = session
 	end
 	local s = session :: Session
@@ -249,9 +259,23 @@ local function step(player: Player, funnel: string, id: string, index: number, n
 	end)
 end
 
--- The tutorial (TutorialService): one funnel per player, a step each time they reach a new one.
+-- The tutorial (TutorialService): one funnel per player, a step each time they reach a new one, and
+-- TutorialStepSeconds (2026-10-09): the seconds this visit spent on the step just finished (0 when several finish
+-- at once; the first one after joining counts from the join).
 function Analytics.tutorialStep(player: Player, index: number, name: string)
 	step(player, "Tutorial", tostring(player.UserId), index, name)
+	local started = stepStartedAt[player] or os.clock()
+	stepStartedAt[player] = os.clock()
+	safely(function()
+		AnalyticsService:LogCustomEvent(player, "TutorialStepSeconds", os.clock() - started, {
+			[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = GameConfig.Tutorial.Steps[index - 1] or "Intro",
+		})
+	end)
+end
+
+-- The starter quests (QuestService): one funnel per player, a step for each quest claimed.
+function Analytics.questClaimed(player: Player, index: number, id: string)
+	step(player, "Quests", tostring(player.UserId), index, id)
 end
 
 -- ForestLoop -----------------------------------------------------------------------------------------
@@ -334,6 +358,15 @@ local function variant(): string
 	return `World {if tierId ~= nil then tostring(tierId) else "?"} {if layout ~= nil then tostring(layout) else "?"}`
 end
 
+-- "Tutorial Train" while the player is still in the tutorial (step 0 is the story intro), else nil.
+local function tutorialWhere(player: Player): string?
+	local index = player:GetAttribute("TutorialStep")
+	if typeof(index) ~= "number" or index >= GameConfig.Tutorial.DoneStep then
+		return nil
+	end
+	return `Tutorial {GameConfig.Tutorial.Steps[index] or "Intro"}`
+end
+
 local function playersBand(): string
 	return `Players {band(#Players:GetPlayers(), PLAYER_BANDS)}`
 end
@@ -385,8 +418,9 @@ end
 -- LeftAt: where in the forest a player left, with the visit's minutes.
 local function leftAt(player: Player, minutes: number)
 	local state = ReplicatedStorage:FindFirstChild("ForestState")
-	local where = "Break"
-	if not breakLogs and state then
+	local tutorial = tutorialWhere(player) -- in the tutorial: which step (2026-10-09; was always the ring)
+	local where = tutorial or "Break"
+	if not tutorial and not breakLogs and state then
 		local done, trees = state:GetAttribute("RingDone"), state:GetAttribute("RingTrees")
 		local percent = if typeof(done) == "number" and typeof(trees) == "number" and trees > 0 then 100 * done / trees else 0
 		where = `Ring {ringIndex} {band(percent, PROGRESS_BANDS)}%`
@@ -554,6 +588,8 @@ function Analytics.stationLocked(player: Player, multiplier: number)
 	local id = HttpService:GenerateGUID(false)
 	purchases[player] = { funnel = "LockedStation", id = id, at = os.clock(), multiplier = multiplier }
 	step(player, "LockedStation", id, 1, "Tried")
+	-- LockedTry (2026-10-09): which station, and whether they were still in the tutorial (lost on the way to the 1x?)
+	Analytics.custom(player, "LockedTry", `{multiplier}x {tutorialWhere(player) or "After tutorial"}`)
 end
 
 local function shopOpened(player: Player)
@@ -594,7 +630,11 @@ local function isStationPass(passId: number): boolean
 	return false
 end
 
-Players.PlayerAdded:Connect(progressOf) -- InServer for players who join mid-forest, planting or not
+Players.PlayerAdded:Connect(function(player)
+	joinedAt[player] = os.clock()
+	stepStartedAt[player] = os.clock()
+	progressOf(player) -- InServer for players who join mid-forest, planting or not
+end)
 Remotes.event("RobuxShopOpened").OnServerEvent:Connect(shopOpened)
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
 	promptFinished(player, purchased, isStationPass(passId))
@@ -777,6 +817,8 @@ Players.PlayerRemoving:Connect(function(player)
 	flushPlanting(player)
 	logged[player] = nil
 	sessions[player] = nil
+	joinedAt[player] = nil
+	stepStartedAt[player] = nil
 	forestProgress[player] = nil
 	purchases[player] = nil
 end)

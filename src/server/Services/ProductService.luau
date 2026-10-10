@@ -6,6 +6,7 @@
 -- - BarBoosts: seeds straight into the Forest Bar (ForestService.addSeeds)
 -- - ServerBoost: 2x training for everyone for a while (TrainingService.addServerBoost)
 -- - UpgradeProducts: one upgrade level, saved through DataService.grantPurchase
+-- - Boosts[].ProductId: a permanent Strength or Speed boost, saved the same way (PassService publishes it)
 -- - SeedShop.Seeds[].ProductId: one special seed into the seed bag, saved the same way (docs/plans/SeedShop.md)
 -- Studio's test panel feeds fake receipts through ProductService.process.
 
@@ -57,6 +58,23 @@ local function upgradeOf(productId: number): (string?, number)
 	return nil, 0
 end
 
+local BOOST_KEYS: { [string]: DataService.StatKey } = {
+	Strength = "StrengthBoostBought",
+	Speed = "SpeedBoostBought",
+}
+
+-- Which boost a product is: its stat ("Strength" / "Speed") and multiplier.
+local function boostOf(productId: number): (string?, number)
+	for stat, ladder in GameConfig.Boosts :: { [string]: { GameConfig.Boost } } do
+		for _, step in ladder do
+			if step.ProductId == productId then
+				return stat, step.Multiplier
+			end
+		end
+	end
+	return nil, 0
+end
+
 local function seedOf(productId: number): string?
 	for _, def in GameConfig.SeedShop.Seeds do
 		if def.ProductId == productId then
@@ -87,8 +105,28 @@ function ProductService.process(receipt: { [string]: any }): Enum.ProductPurchas
 	local upgradeId, level = upgradeOf(productId)
 	if upgradeId then
 		if
-			player and DataService.grantPurchase(player, purchaseId, function()
+			player
+			and DataService.grantPurchase(player, purchaseId, function()
 				grantUpgrade(player, upgradeId, level)
+			end)
+		then
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		end
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local boostStat, multiplier = boostOf(productId)
+	local boostKey: DataService.StatKey? = if boostStat then BOOST_KEYS[boostStat] else nil
+	if boostKey then
+		local key: DataService.StatKey = boostKey
+		if
+			player
+			and DataService.grantPurchase(player, purchaseId, function()
+				-- ponytail: a lower boost bought after a higher one (two prompts at once) changes nothing; the shop
+				-- only offers the next one up, so refunding it isn't worth the code.
+				local profile = DataService.get(player)
+				if profile then
+					DataService.set(player, key, math.max(profile[key] :: number, multiplier))
+				end
 			end)
 		then
 			return Enum.ProductPurchaseDecision.PurchaseGranted

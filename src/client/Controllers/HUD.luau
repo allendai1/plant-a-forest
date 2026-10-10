@@ -18,8 +18,10 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local SocialService = game:GetService("SocialService")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local Sounds = require(script.Parent.Parent.Sounds)
@@ -41,9 +43,9 @@ local COIN_HOLD_SECONDS = 0.25
 local COIN_FLY_SECONDS = 0.55
 local COIN_SPREAD = 380 -- how far (pixels) the burst reaches sideways from the middle; 60% of that up and down
 local COIN_MIN, COIN_MAX = 2, 5 -- coins per handful (was 6 to 18; the user found it crowded, 2026-10-08)
--- Landing coins play this: Creator Store "plop" (WesFluff, 0.19 s), the closest measured match to the
--- user's reference recording (a short soft thump, ~2.2 kHz). Same pitch each time, a tiny wobble.
-local COIN_SOUND_ID = "rbxassetid://773858658"
+-- Landing coins play this: Creator Store "Coin sfx" (FranTHGuy, 1.63 s), the user's pick on 2026-10-08 (it was
+-- "plop", 773858658, 0.19 s). Same pitch each time, a tiny wobble.
+local COIN_SOUND_ID = "rbxassetid://109742263473623"
 local COIN_SOUND_VOLUME = 0.35
 local COIN_SOUNDS_MAX = 1 -- sounds per handful (on its first landing); the user wanted one per burst
 local COIN_SOUND_GAP = 0.25 -- and never two closer than this, so a fast planting streak doesn't pile them up
@@ -74,11 +76,13 @@ local LEVEL_UP_GAP = 0.9 -- the level-up sound at most this often, so fast train
 local SPEED_HEX = "#50b4ff"
 -- The ring trunk right of the Forest Bar: a tree trunk's cross-section, one ring per forest ring (outer = first).
 local TRUNK_SIZE = 108 -- across, in the bar's pixels
+local TRUNK_GROW_TOUCH = 1.25 -- phones: the trunk this much bigger, alone at the top of the screen
 local TRUNK_HEART = 36 -- the middle disc, with how far along the open ring is (%)
 local TRUNK_WOOD = { Color3.fromRGB(226, 190, 140), Color3.fromRGB(198, 156, 108) } -- rings still to come
 local TRUNK_GROWN = { Color3.fromRGB(96, 196, 84), Color3.fromRGB(70, 160, 64) } -- finished rings
 local TRUNK_OPEN = Color3.fromRGB(255, 232, 160) -- the open ring, glowing like it does in the forest
 local TRUNK_FILL = Color3.fromRGB(150, 240, 120) -- its full-grown trees, sweeping clockwise from the top
+local TRUNK_NEXT_FADE = 0.45 -- the next ring's early trees: the same fill, this transparent (two rings)
 -- Floating "+N" stat popups while training: they pop in somewhere around the middle of the screen,
 -- float up and fade out.
 local GAIN_AREA = Vector2.new(0.32, 0.22) -- how far from the middle they can appear, as a fraction of the screen
@@ -130,7 +134,8 @@ function HUD.pulseBar()
 	end
 end
 
-function HUD.banner(text: string, color: Color3?)
+-- `size` scales it (1 = normal) and `seconds` is how long it stays (BANNER_SECONDS by default).
+function HUD.banner(text: string, color: Color3?, size: number?, seconds: number?)
 	local banner = bannerLabel
 	if not banner then
 		return
@@ -142,10 +147,11 @@ function HUD.banner(text: string, color: Color3?)
 	banner.Visible = true
 	local pop = banner:FindFirstChildOfClass("UIScale")
 	if pop then
-		pop.Scale = 0.6
-		TweenService:Create(pop, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		local scale = size or 1
+		pop.Scale = 0.6 * scale
+		TweenService:Create(pop, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = scale }):Play()
 	end
-	task.delay(BANNER_SECONDS, function()
+	task.delay(seconds or BANNER_SECONDS, function()
 		if bannerShown == shown then
 			banner.Visible = false
 		end
@@ -246,7 +252,9 @@ local function clink()
 	sound.PlaybackSpeed = COIN_PITCH * (1 + streak * COIN_STREAK_STEP) * wobble
 	sound.Parent = SoundService -- not in a part, so it plays at full volume
 	sound:Play()
-	Debris:AddItem(sound, 1) -- longer than the clip
+	sound.Ended:Once(function()
+		sound:Destroy()
+	end)
 end
 
 -- Where the coins burst out: the middle of the screen, a little above center, in viewport pixels.
@@ -558,13 +566,31 @@ local function buildTop(gui: ScreenGui)
 	-- same day). Hidden during the break.
 	local trunk = Instance.new("Frame")
 	trunk.Name = "RingTrunk"
-	-- Level with the bar's top on a computer (the bar is at the screen's top edge) and its bottom on a phone.
-	trunk.AnchorPoint = Vector2.new(0, if touch then 1 else 0)
-	trunk.Position = UDim2.new(1, 12, if touch then 1 else 0, 0)
 	trunk.Size = UDim2.fromOffset(TRUNK_SIZE, TRUNK_SIZE)
 	trunk.BackgroundTransparency = 1 -- no bark disc behind the rings (the user's call, 2026-10-08)
 	trunk.ZIndex = 3
-	trunk.Parent = bar
+	if touch then
+		-- Phones: on its own at the top middle of the screen (2026-10-08, the user's ask; it was right of the bar at
+		-- the bottom). The break's countdown uses that spot, but the trunk is hidden during the break.
+		local holder = Instance.new("Frame")
+		holder.Name = "RingTrunkHolder"
+		holder.BackgroundTransparency = 1
+		holder.AnchorPoint = Vector2.new(0.5, 0)
+		holder.Size = UDim2.fromOffset(TRUNK_SIZE, TRUNK_SIZE)
+		holder.Parent = gui
+		UIStyle.autoScale(holder, TRUNK_GROW_TOUCH)
+		-- At the very top, up in Roblox's top bar row (between its buttons), like the computer layout's bar: the HUD's
+		-- safe insets start below that row, so move up by its height.
+		local function place()
+			holder.Position = UDim2.new(0.5, 0, 0, 4 - GuiService.TopbarInset.Height)
+		end
+		GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(place)
+		place()
+		trunk.Parent = holder
+	else
+		trunk.Position = UDim2.new(1, 12, 0, 0) -- right of the bar, level with its top (the screen's top edge)
+		trunk.Parent = bar
+	end
 	local function disc(parent: Instance, across: number, z: number): Frame
 		local frame = Instance.new("Frame")
 		frame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -662,6 +688,9 @@ local function buildTop(gui: ScreenGui)
 		local trees = attribute(forestState, "RingTrees")
 		local grown = attribute(forestState, "RingDone")
 		local turn = if trees > 0 then 360 * math.clamp(grown / trees, 0, 1) else 0
+		-- Two rings (2026-10-09): the next ring's band fills too, fainter, as its early trees finish.
+		local nextTrees = attribute(forestState, "NextRingTrees")
+		local nextTurn = if nextTrees > 0 then 360 * math.clamp(attribute(forestState, "NextRingDone") / nextTrees, 0, 1) else 0
 		-- The trunk's rings sit like the forest's: outer-first forests count from its edge, inner-first ones
 		-- (the layout A/B test) from its heart, like a real tree's growth rings.
 		local inward = forestState:GetAttribute("OutsideIn") ~= false
@@ -671,11 +700,17 @@ local function buildTop(gui: ScreenGui)
 				then TRUNK_GROWN[disc % 2 + 1]
 				elseif i == open then TRUNK_OPEN
 				else TRUNK_WOOD[disc % 2 + 1]
+			local isNext = i == open + 1 and nextTurn > 0
+			local t = if isNext then nextTurn else turn
 			for _, sweep in ring.sweeps do
-				sweep.Visible = i == open
+				sweep.Visible = i == open or isNext
 			end
-			ring.right.Rotation = math.clamp(turn, 0, 180)
-			ring.left.Rotation = math.clamp(turn, 180, 360)
+			for _, gradient in { ring.right, ring.left } do
+				local half = gradient.Parent :: Frame
+				half.BackgroundTransparency = if isNext then TRUNK_NEXT_FADE else 0
+			end
+			ring.right.Rotation = math.clamp(t, 0, 180)
+			ring.left.Rotation = math.clamp(t, 180, 360)
 		end
 		-- The open ring's progress in percent, rounded down so it reads 100% only once it's done (the user's
 		-- pick over the trees left, 2026-10-08).
@@ -683,7 +718,7 @@ local function buildTop(gui: ScreenGui)
 			percent.Text = if open <= rings and trees > 0 then `{math.floor(100 * grown / trees)}%` else ""
 		end
 	end
-	for _, name in { "RingCount", "OpenRow", "RingDone", "RingTrees", "AwakeningEndsAt" } do
+	for _, name in { "RingCount", "OpenRow", "RingDone", "RingTrees", "NextRingDone", "NextRingTrees", "AwakeningEndsAt" } do
 		forestState:GetAttributeChangedSignal(name):Connect(refreshTrunk)
 	end
 	refreshTrunk()
@@ -938,8 +973,8 @@ local function boostButton(parent: Instance, order: number, stat: "Strength" | "
 	label.LayoutOrder = 2
 	label.RichText = true
 
-	local ladder = GameConfig.BoostPasses[stat]
-	local nextPass: GameConfig.BoostPass? = nil
+	local ladder = GameConfig.Boosts[stat]
+	local nextPass: GameConfig.Boost? = nil
 	local function refresh()
 		local owned = localPlayer:GetAttribute(`{stat}Boost`)
 		local have = if typeof(owned) == "number" then owned else 1
@@ -955,14 +990,14 @@ local function boostButton(parent: Instance, order: number, stat: "Strength" | "
 		-- Maxed out: no price tag, and pressing it does nothing (no "MAX" tag, the user's call, 2026-10-07).
 		tag.Visible = nextPass ~= nil
 		if nextPass then
-			tag.Text = UIStyle.priceText(nextPass.PassId, Enum.InfoType.GamePass, refresh)
+			tag.Text = UIStyle.priceText(nextPass.ProductId, Enum.InfoType.Product, refresh)
 		end
 	end
 	localPlayer:GetAttributeChangedSignal(`{stat}Boost`):Connect(refresh)
 	refresh()
 	button.Activated:Connect(function()
 		if nextPass then
-			MarketplaceService:PromptGamePassPurchase(localPlayer, nextPass.PassId)
+			MarketplaceService:PromptProductPurchase(localPlayer, nextPass.ProductId)
 		end
 	end)
 end
@@ -1035,14 +1070,32 @@ local function buildRight(gui: Frame)
 	end)
 end
 
--- Bottom left, on phones too (like the pyramid).
+-- Bottom left, on phones too (like the pyramid). The friends icon is a button that opens Roblox's invite-friends
+-- prompt (2026-10-08, the user's ask).
+local function inviteFriends() -- (UIStyle.clicky plays the click)
+	local ok, can = pcall(SocialService.CanSendGameInviteAsync, SocialService, localPlayer)
+	if ok and can then
+		pcall(SocialService.PromptGameInvite, SocialService, localPlayer)
+	end
+end
+
 local function buildFriends(gui: Frame)
 	local row = group(gui, "FriendBoost")
 	row.AnchorPoint = Vector2.new(0, 1)
 	row.Position = UDim2.new(0, 14, 1, -14)
 	UIStyle.autoScale(row)
 	UIStyle.list(row, true, 8)
-	UIStyle.icon(row, UIStyle.Icons.Friends, 50)
+	local invite = Instance.new("ImageButton")
+	invite.Name = "Invite"
+	invite.BackgroundTransparency = 1
+	invite.Image = UIStyle.Icons.Friends.Image
+	invite.ScaleType = Enum.ScaleType.Fit
+	invite.Size = UDim2.fromOffset(50, 50)
+	invite.Parent = row
+	UIStyle.clicky(invite)
+	invite.Activated:Connect(function()
+		task.spawn(inviteFriends)
+	end)
 	local label = UIStyle.text(row, "", 34, nil, true)
 	label.LayoutOrder = 2
 	local function refresh()
@@ -1053,7 +1106,8 @@ local function buildFriends(gui: Frame)
 	refresh()
 end
 
--- The break after a forest: the countdown, the extend button and the spring label.
+-- The break after a forest: the countdown. (The spring's "2x boost" line was removed 2026-10-08, the user: the
+-- "2X TRAINING" sign over the World Tree already says it.)
 local function buildBreak(gui: Frame)
 	local forestState = ReplicatedStorage:WaitForChild("ForestState")
 	local bottom = group(gui, "Break")
@@ -1064,9 +1118,6 @@ local function buildBreak(gui: Frame)
 	bottom.Visible = false
 	UIStyle.autoScale(bottom)
 	UIStyle.list(bottom, false, 10, Enum.HorizontalAlignment.Center)
-	local spring = UIStyle.text(bottom, "", 32, Color3.fromRGB(255, 210, 80)) -- gold, like the spring's ring
-	spring.Name = "Spring"
-	spring.LayoutOrder = 1
 	local row = group(bottom, "Row")
 	row.LayoutOrder = 2
 	UIStyle.list(row, true, 14)
@@ -1084,12 +1135,6 @@ local function buildBreak(gui: Frame)
 				.. (if picked then `: {picked.Name}` else "")
 				.. `  ({math.ceil(left / 60)}/{GameConfig.Awakening.MaxBreakMinutes} MIN)`
 		end
-		-- The spring's multiplier shows the whole break (2026-10-08; it used to show only inside the circle).
-		local multiplier = attribute(forestState, "SpringMultiplier")
-		spring.Visible = running and multiplier > 0
-		spring.Text = if localPlayer:GetAttribute("InSpring") == true
-			then `{multiplier}x boost: Strength and Speed`
-			else `{multiplier}x boost by the World Tree`
 	end
 	forestState:GetAttributeChangedSignal("Extensions"):Connect(function()
 		local by = forestState:GetAttribute("ExtendedBy")
@@ -1195,6 +1240,11 @@ local function buildDevPanel(gui: ScreenGui)
 	add("Load saved stats", c.Teal, fire("loadSnapshot", 0))
 	add("Reset to new player", c.Red, fire("resetProfile", 0))
 	add("Replay tutorial intro", c.Blue, fire("restartTutorial", 0))
+	-- The starter quests (QuestController): back to quest 1, or on to the next (past the last = all done, then 1 again).
+	add("Restart quests", c.Blue, fire("setQuestIndex", 1))
+	add("Skip quest", c.Blue, function()
+		remote:FireServer("setQuestIndex", attribute(localPlayer, "QuestIndex") % (#GameConfig.Quests + 1) + 1)
+	end)
 	add("Extend break +1 min", c.Gold, fire("extendBreak", 1))
 	add("Pick Kyoto Forest", c.Gold, fire("pickWorld", 2))
 	add("End break", c.Gold, fire("endAwakening", 0))
@@ -1206,6 +1256,18 @@ local function buildDevPanel(gui: ScreenGui)
 	end)
 	add("Friend boost 20%", c.Purple, fire("setFriendBoost", 20))
 	add("Clear station passes", c.Red, fire("clearStationPasses", 0))
+	add("Clear Ranger pass", c.Red, fire("grantHands", 1)) -- this session only: back to the plain gnome
+	-- Hotkeys for filming in Freecam (Shift+P), which hides this panel: R fills the ring, F the forest.
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.R then
+			remote:FireServer("fillOpenRow", leave())
+		elseif input.KeyCode == Enum.KeyCode.F then
+			remote:FireServer("fillAll", leave())
+		end
+	end)
 end
 
 function HUD.start()

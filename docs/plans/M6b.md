@@ -74,7 +74,7 @@ Done when: the lobby matches the layout below in Studio, every station, the rack
 - **The shop ring** (your second reference): a glowing ring in front of the altar. `ShopController` opens the shop panel while you stand in it. Buying comes in M7, so the three upgrades say "Coming soon".
 - **The fence is at 150 studs, not 172:** the hub's edge is a hexagon, and ring-7 tiles reach to about 154 studs from the center between the trails. The plaza runs from 89 to 146.
 - **The Ancient Tree's old trunk streaks were removed:** they clashed with the glyphs. The glowing root veins and canopy orbs stay.
-- **Meshes go to Studio through Open Cloud:** the FBX is uploaded as a Model asset and loaded with `InsertService`, so nothing has to be imported by hand. The steps are in `docs/HANDOFF.md`.
+- **Meshes go to Studio through Open Cloud:** the FBX is uploaded as a Model asset and loaded with `InsertService`, so nothing has to be imported by hand. The steps are in [docs/HANDOFF.md](../HANDOFF.md).
 
 **Verified in Studio (one player, through the Studio connection):**
 - Screenshots: the full-grown tree with glyphs and vines over the plaza, garden ring, rune circle, fence, trails, acorn piles, shop and training pads. Close-ups of the shop with its ring, and of the pads.

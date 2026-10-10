@@ -1,6 +1,6 @@
 # Design changes: the giant sequoia forest
 
-Status: **approved and applied 2026-10-06.** Worked out from the Studio previews. Applied directly to `docs/GDD.md` (now the master copy), GameConfig, `docs/MVP_PLAN.md`, `docs/ARCHITECTURE.md` and `CLAUDE.md`. `docs/Balancing.xlsx` still needs updating by hand (see the end of this file).
+Status: **approved and applied 2026-10-06.** Worked out from the Studio previews. Applied directly to [docs/GDD.md](GDD.md) (now the master copy), GameConfig, [docs/MVP_PLAN.md](MVP_PLAN.md), [docs/ARCHITECTURE.md](ARCHITECTURE.md) and [CLAUDE.md](../CLAUDE.md). `docs/Balancing.xlsx` still needs updating by hand (see the end of this file).
 
 ## Why
 
@@ -50,14 +50,14 @@ This is all client-side, triggered when the `UnlockedRing` attribute changes. It
 
 1. **Paths:** removed. The map is the central clearing with the Ancient Tree, decorations and shops that fit the theme, and 684 plots around it.
 2. **Ring complete reward:** yes, finishing a ring should pay bonuses, but that goes in the backlog. The MVP plays the moment only.
-3. **GDD:** edited directly in `docs/GDD.md`, which is now the master copy.
+3. **GDD:** edited directly in [docs/GDD.md](GDD.md), which is now the master copy.
 
 ## Art direction update (2026-10-06)
 
 After the style reference image (a floating island of hex tiles around a glowing central tree):
 
 1. **Low-poly style, not sequoias.** Trees are stylized low-poly (faceted, flat shaded) instead of giant sequoias. Full-grown sizes are about 42 × 40 studs (leafy, tall × wide) and 45 × 24 (pine): modeled larger, then scaled to 60% (`FOREST_TREE_SCALE`) so one tree fits about one tile like in the reference. The Ancient Tree is about 354 × 384 (see 7 below). Everything is generated in Blender by `tools/blender/build_assets.py`.
-2. **8 growth stages** (changed 2026-10-06 from 4, the user's request; `docs/plans/TreeStages.md`). Seedling, sprout, sapling, small, young, growing, mature, full grown, packed toward the start: with 44 seeds the model changes at seeds 1, 3, 6, 10, 16, 24, 33 and 44 (`GameConfig.Growth.StageStarts`). Each stage change adds a small leaf puff, and a rising note for your own seeds.
+2. **8 growth stages** (changed 2026-10-06 from 4, the user's request; [docs/plans/TreeStages.md](plans/TreeStages.md)). Seedling, sprout, sapling, small, young, growing, mature, full grown, packed toward the start: with 44 seeds the model changes at seeds 1, 3, 6, 10, 16, 24, 33 and 44 (`GameConfig.Growth.StageStarts`). Each stage change adds a small leaf puff, and a rising note for your own seeds.
 3. **Two Common species:** a round leafy tree and a pine.
 4. **The Ancient Tree's look:** thick stylized trunk, roots around its base, a large two-tone low-poly canopy, subtle cyan/green glowing accents, and stones, flowers and grass around it.
 5. **Walkways come back** as decoration: wooden walkways and lanterns between rings and out from the hub. Layout still to be decided.
@@ -101,19 +101,19 @@ Verified in Studio: 66 rows, 99 plots in every section; the first open row was t
 - **Hub rings 4 → 6** (about 180 studs in radius), **forest rings 11 → 9** (rings 7–15). The map's outer edge doesn't move.
 - **540 plots** (594 hexes minus 54 under the walkways), 6 sections of 90 plots, rows of 14 down to 6.
 - **Seeds per tree 40 → 44**, so the bar target stays exactly **23,760**. Stages: 1–11 sprout, 12–22 sapling, 23–43 young tree, 44 full grown.
-- The lobby's look (glyphs and vines on the tree, the root garden, a stone plaza, fences and lanterns, the shop altar with its ring, six acorn racks around the roots, tier pads for training) was built in M6b (`docs/plans/M6b.md`). The first section to open is now the one in front of the spawn, since there are seed racks all around the tree.
+- The lobby's look (glyphs and vines on the tree, the root garden, a stone plaza, fences and lanterns, the shop altar with its ring, six acorn racks around the roots, tier pads for training) was built in M6b ([docs/plans/M6b.md](plans/M6b.md)). The first section to open is now the one in front of the spawn, since there are seed racks all around the tree.
 - **For the spreadsheet:** hub rings 6, forest rings 9, 540 plots, 44 seeds per hex, target 23,760.
 
 ## Seed shop: special trees boost training, not coins (2026-10-07, the user's request)
 
 - **Replaces the backlog's rarity plan.** That plan was a roll on the first seed, with rarer trees paying more coins per seed.
-- **What replaces it:** a Grow a Garden-style seed shop (`docs/plans/SeedShop.md`).
+- **What replaces it:** a Grow a Garden-style seed shop ([docs/plans/SeedShop.md](plans/SeedShop.md)).
 - **Why boosts instead of coins:** a tree only takes 44 seeds, which a strong player plants in one press, and coins only buy upgrades (about 41,000 coins maxes them). A training boost stays worth having at every level, and the shop gives veterans something to spend coins on.
 - **Numbers:** Palm +25%, Cherry Blossom +50%, Redwood +100% (+0.25x for everyone), Crystal Tree +200% (+0.5x for everyone). Your own trees are capped at +300%, everyone's at 2x, and you can plant 3 special seeds per forest.
 
 ## Acorns circling the head instead of one giant seed (2026-10-06, the user's request)
 
-The giant seed over your head (GDD) is replaced by acorns circling your head (`docs/plans/AcornOrbit.md`).
+The giant seed over your head (GDD) is replaced by acorns circling your head ([docs/plans/AcornOrbit.md](plans/AcornOrbit.md)).
 - **The tiers:** 1–5 seeds show as small acorns; every 6 of a tier merge into one acorn of the next: large at 6, huge at 36, giant at 216.
 - **Placement:** small acorns circle at head height, and bigger ones ride above the head like a crown.
 - **The count:** no number shows above the acorns; the exact count is in the HUD's "Capacity: n/max".

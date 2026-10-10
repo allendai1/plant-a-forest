@@ -23,8 +23,9 @@ local WALL_SPEED = 0.35 -- how fast the wall's streaks scroll around the ring (B
 local WALL_FLIP = true -- the beams' width axis points down, which puts the texture's bright edge at the foot
 local CURVE = 0.5523 -- Bezier handle length per radius for a quarter circle
 
--- Builds (or rebuilds) the effect for one ring mesh; returns its GlowRingFx part, a sibling of the mesh.
-function GlowRing.build(source: BasePart): Part
+-- Builds (or rebuilds) the effect for one ring mesh; returns its GlowRingFx part, a sibling of the mesh. `height`
+-- overrides the wall's height (the Ancient Spring's is a tall field, 2026-10-09).
+function GlowRing.build(source: BasePart, height: number?): Part
 	local old = source.Parent and source.Parent:FindFirstChild("GlowRingFx")
 	if old then
 		old:Destroy()
@@ -33,7 +34,7 @@ function GlowRing.build(source: BasePart): Part
 	local across = source.Size.X -- the mesh's outer diameter; the band's middle is just inside it
 	local bandRadius = across / 2 * 0.97
 	local glowAcross = 2 * bandRadius / TEXTURE_CENTER
-	local wallHeight = math.min(WALL_HEIGHT, across * WALL_PER_STUD)
+	local wallHeight = height or math.min(WALL_HEIGHT, across * WALL_PER_STUD)
 
 	local glow = Instance.new("Part")
 	glow.Name = "GlowRingFx"

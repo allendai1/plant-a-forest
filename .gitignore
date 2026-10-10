@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# Obsidian: the open tabs and layout change on every click (the rest of .obsidian is the vault settings)
+.obsidian/workspace.json

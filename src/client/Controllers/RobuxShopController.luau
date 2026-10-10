@@ -26,6 +26,8 @@ local REFRESH_SECONDS = 0.5
 local WIDTH = 680
 local TABS = { "Boosts", "Characters", "Stations" }
 local PREVIEW_TURN = 0.6 -- radians per second
+local STATION_CARD = 190 -- a station card's height: tall enough that two rows fill the page (was 118, 2026-10-08)
+local PHONE_FILL = { 0.94, 0.92 } -- phones: the window fills this share of the screen's height and width at most
 
 local RobuxShopController = {}
 
@@ -118,7 +120,7 @@ local function boostCard(
 	order: number,
 	name: string,
 	pitch: string,
-	ladder: { GameConfig.BoostPass },
+	ladder: { GameConfig.Boost },
 	ownedAttribute: string,
 	icon: UIStyle.Icon
 )
@@ -135,12 +137,12 @@ local function boostCard(
 	line.Position = UDim2.fromOffset(86, 70)
 	local buy = buyButton(frame, UIStyle.Colors.Green)
 	for _, step in ladder do
-		cardOf[step.PassId] = frame
+		cardOf[step.ProductId] = frame
 	end
-	local nextPass: GameConfig.BoostPass? = nil
+	local nextPass: GameConfig.Boost? = nil
 	buy.Activated:Connect(function()
 		if nextPass then
-			MarketplaceService:PromptGamePassPurchase(localPlayer, nextPass.PassId)
+			MarketplaceService:PromptProductPurchase(localPlayer, nextPass.ProductId)
 		end
 	end)
 	table.insert(refreshers, function()
@@ -156,7 +158,7 @@ local function boostCard(
 			then `<font color="#ffffff">{nextPass.Multiplier}x</font>`
 			else `<font color="#78ff5a">{have}x (max)</font>`
 		if nextPass then
-			buy.Text = UIStyle.priceText(nextPass.PassId, Enum.InfoType.GamePass, refreshAll)
+			buy.Text = UIStyle.priceText(nextPass.ProductId, Enum.InfoType.Product, refreshAll)
 			UIStyle.recolor(buy, UIStyle.Colors.Green)
 		else
 			buy.Text = "MAX"
@@ -260,7 +262,7 @@ local function characterCards(list: Instance)
 end
 
 local function stationCards(list: Instance)
-	local pitch = UIStyle.text(list, "Unlock a training tier now, without waiting for forests.", 20, UIStyle.GREY)
+	local pitch = UIStyle.text(list, "Unlock a training tier now, without waiting for forests.", 24, UIStyle.GREY)
 	pitch.LayoutOrder = 1
 	local grid = Instance.new("Frame")
 	grid.LayoutOrder = 2
@@ -269,26 +271,28 @@ local function stationCards(list: Instance)
 	grid.AutomaticSize = Enum.AutomaticSize.Y
 	grid.Parent = list
 	local layout = Instance.new("UIGridLayout")
-	layout.CellSize = UDim2.new(0.25, -9, 0, 118)
+	layout.CellSize = UDim2.new(0.25, -9, 0, STATION_CARD)
 	layout.CellPadding = UDim2.fromOffset(12, 12)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = grid
 	for _, step in GameConfig.Stats.GymMultipliers do
 		local passId = GameConfig.StationPasses[step.Multiplier]
 		if passId then
-			local frame = UIStyle.card(grid, 118)
+			local frame = UIStyle.card(grid, STATION_CARD)
 			frame.LayoutOrder = step.Multiplier
 			cardOf[passId] = frame
-			local title = UIStyle.text(frame, `{step.Multiplier}x`, 36)
+			-- Bigger text and a big buy button filling the card's lower half (2026-10-08, the user's ask: the line
+			-- was too small on phones and the page had empty space under the buttons).
+			local title = UIStyle.text(frame, `{step.Multiplier}x`, 46)
 			title.AnchorPoint = Vector2.new(0.5, 0)
-			title.Position = UDim2.new(0.5, 0, 0, 4)
+			title.Position = UDim2.new(0.5, 0, 0, 8)
 			local free =
-				UIStyle.text(frame, `or {step.ForestsDone} forest{if step.ForestsDone == 1 then "" else "s"}`, 15, UIStyle.GREY)
+				UIStyle.text(frame, `or {step.ForestsDone} forest{if step.ForestsDone == 1 then "" else "s"}`, 22, UIStyle.GREY)
 			free.AnchorPoint = Vector2.new(0.5, 0)
-			free.Position = UDim2.new(0.5, 0, 0, 42)
-			local buy = UIStyle.button(frame, "", UIStyle.Colors.Green, UDim2.new(1, -20, 0, 40), 24)
+			free.Position = UDim2.new(0.5, 0, 0, 62)
+			local buy = UIStyle.button(frame, "", UIStyle.Colors.Green, UDim2.new(1, -20, 0, 70), 30)
 			buy.AnchorPoint = Vector2.new(0.5, 1)
-			buy.Position = UDim2.new(0.5, 0, 1, -10)
+			buy.Position = UDim2.new(0.5, 0, 1, -12)
 			buy.Activated:Connect(function()
 				if not ownsPass[passId] then
 					MarketplaceService:PromptGamePassPurchase(localPlayer, passId)
@@ -343,7 +347,21 @@ local function build(): ScreenGui
 	holder.Size = UDim2.fromOffset(WIDTH, if UIStyle.isTouch() then 580 else 640) -- phones are short; pages scroll
 	holder.BackgroundTransparency = 1
 	holder.Parent = screen
-	UIStyle.autoScale(holder)
+	if UIStyle.isTouch() then
+		-- Phones: as big as the screen allows (the usual scale left it small, with tiny text; 2026-10-08).
+		local fit = Instance.new("UIScale")
+		fit.Parent = holder
+		local function update()
+			local room = screen.AbsoluteSize
+			if room.Y > 0 then
+				fit.Scale = math.min(room.Y * PHONE_FILL[1] / holder.Size.Y.Offset, room.X * PHONE_FILL[2] / WIDTH)
+			end
+		end
+		screen:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
+		update()
+	else
+		UIStyle.autoScale(holder)
+	end
 	local panel = UIStyle.panel(holder)
 	panel.Size = UDim2.fromScale(1, 1)
 	local title = UIStyle.text(panel, "SHOP", 48, UIStyle.GOLD)
@@ -384,7 +402,7 @@ local function build(): ScreenGui
 		3,
 		"Strength Boost",
 		"Every rep gives more Strength, forever",
-		GameConfig.BoostPasses.Strength,
+		GameConfig.Boosts.Strength,
 		"StrengthBoost",
 		UIStyle.Icons.Strength
 	)
@@ -393,7 +411,7 @@ local function build(): ScreenGui
 		4,
 		"Speed Boost",
 		"Every run gives more Speed, forever",
-		GameConfig.BoostPasses.Speed,
+		GameConfig.Boosts.Speed,
 		"SpeedBoost",
 		UIStyle.Icons.Speed
 	)

@@ -3,11 +3,11 @@
 -- Shows one player per bench (you if you're on it, otherwise whoever got on first) by hiding the
 -- others locally, poses whoever is shown on each bench (lying back, pressing the bar, faster with more
 -- Strength), leaves the bench when you jump, plays the run animation while the server says you're on
--- a treadmill (faster with more Speed), and shows the locked-station popup.
+-- a treadmill (faster with more Speed), and opens the buy prompt at a locked station. Also holds every player's
+-- arms up over their head while they carry acorns (2026-10-09, the user's ask, like Build the Pyramid).
 -- The server decides everything that matters; this only renders it.
 
 local CollectionService = game:GetService("CollectionService")
-local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -16,6 +16,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
 local Remotes = require(Shared.Remotes)
+local HUD = require(script.Parent.HUD)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
 local BENCH_TAG = "BenchStation"
@@ -27,8 +28,13 @@ local JUMP_DEBOUNCE = 0.5
 local PRESS_MIN, PRESS_PER_DECADE, PRESS_MAX = 1.5, 1.0, 10
 local RUN_ANIM_STUDS = 24
 local RUN_ANIM_MAX = 3 -- the treadmill run animation's fastest playback (walk speeds now go past 160)
+local BENCH_HINT_LIFT = 150 -- the "Jump to get off" line, this far up from the screen's bottom (pixels)
 local LIE_LIFT = 0.3 -- raises the lying body so its back rests on the bench top
 local SIDES: { { name: string, sign: number } } = { { name = "Left", sign = -1 }, { name = "Right", sign = 1 } }
+-- Carrying: upper arms raised this far from hanging down and tilted this far out, forearms bent in toward the head.
+local CARRY_ARM_UP = math.rad(175)
+local CARRY_ARM_OUT = math.rad(12)
+local CARRY_ELBOW_IN = math.rad(8) -- nearly straight, so the hands reach the acorn (60 left them beside the head)
 
 -- Only the model is kept. With StreamingEnabled the bench's parts (bar, prompt holder) can be unloaded
 -- and recreated as new objects, so they're looked up again every time. The bar is moved only here
@@ -110,6 +116,23 @@ local function poseBench(character: Model, press: number)
 	end
 end
 
+-- Arms up holding the acorns over the head, for everyone carrying (not benching). Set every frame after the
+-- Animator like the bench pose, so it wins over walking and idling; the Animator takes the arms back once they stop.
+local function poseCarriers()
+	for _, player in Players:GetPlayers() do
+		local carried = player:GetAttribute("Carried")
+		local character = player.Character
+		if character and typeof(carried) == "number" and carried > 0 and not benchingOf(player) then
+			for _, side in SIDES do
+				local name, out = side.name, -side.sign -- negative Z turns the right arm outward once it points up
+				local up = CFrame.Angles(0, 0, out * CARRY_ARM_OUT) * CFrame.Angles(CARRY_ARM_UP, 0, 0)
+				setJoint(character, `{name}UpperArm`, `{name}Shoulder`, up)
+				setJoint(character, `{name}LowerArm`, `{name}Elbow`, CFrame.Angles(0, 0, out * CARRY_ELBOW_IN))
+			end
+		end
+	end
+end
+
 local function pressesPerSecond(player: Player): number
 	local strength = player:GetAttribute("Strength")
 	local value = if typeof(strength) == "number" then math.max(strength, 0) else 0
@@ -136,9 +159,28 @@ local function stepBenches(dt: number)
 	end
 end
 
+-- While you're on a bench: how to get off (you leave by jumping; nothing said so before 2026-10-09).
+local benchHint: TextLabel? = nil
+local function showBenchHint(on: boolean)
+	local hint = benchHint
+	if not hint then
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "BenchHint"
+		gui.ResetOnSpawn = false
+		gui.Parent = localPlayer:WaitForChild("PlayerGui")
+		local made = UIStyle.text(gui, if UIStyle.isTouch() then "Tap Jump to get off" else "Jump to get off", 26)
+		made.AnchorPoint = Vector2.new(0.5, 1)
+		made.Position = UDim2.new(0.5, 0, 1, -BENCH_HINT_LIFT)
+		benchHint = made
+		hint = made
+	end
+	(hint :: TextLabel).Visible = on
+end
+
 -- Who is shown on each bench: the local player if they're on it, otherwise the earliest to sit down.
 local function refreshBenches()
 	local mine = benchingOf(localPlayer)
+	showBenchHint(mine ~= nil)
 	local shown: { [string]: Player } = {}
 	if mine then
 		shown[mine] = localPlayer
@@ -236,89 +278,23 @@ local function setRunning(on: boolean)
 	end
 end
 
--- The locked-station popup: the requirement, plus an unlock button once that tier's pass exists.
-local popup: Frame? = nil
-local popupTitle: TextLabel? = nil
-local popupBody: TextLabel? = nil
-local buyButton: TextButton? = nil
-local popupPassId = 0
-
-local function buildPopup()
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "StationLocked"
-	gui.ResetOnSpawn = false
-	gui.Enabled = true
-	local holder = Instance.new("Frame")
-	holder.AnchorPoint = Vector2.new(0.5, 0.5)
-	holder.Position = UDim2.fromScale(0.5, 0.5)
-	holder.Size = UDim2.fromOffset(440, 250)
-	holder.BackgroundTransparency = 1
-	holder.Visible = false
-	holder.Parent = gui
-	UIStyle.autoScale(holder)
-	local frame = UIStyle.panel(holder)
-	frame.Size = UDim2.fromScale(1, 1)
-	local function text(name: string, y: number, size: number, color: Color3?): TextLabel
-		local label = UIStyle.text(frame, "", size, color)
-		label.Name = name
-		label.AutomaticSize = Enum.AutomaticSize.None
-		label.Position = UDim2.fromOffset(20, y)
-		label.Size = UDim2.new(1, -40, 0, size * 2.2)
-		label.TextWrapped = true
-		return label
-	end
-	local title = text("Title", 16, 36, UIStyle.GOLD)
-	title.Size = UDim2.new(1, -40, 0, 40)
-	popupTitle = title
-	popupBody = text("Body", 66, 24)
-	local buy = UIStyle.button(frame, "", UIStyle.Colors.Green, UDim2.fromOffset(280, 54), 28)
-	buy.Name = "Buy"
-	buy.AnchorPoint = Vector2.new(0.5, 1)
-	buy.Position = UDim2.new(0.5, 0, 1, -20)
-	buy.Activated:Connect(function()
-		if popupPassId ~= 0 then
-			MarketplaceService:PromptGamePassPurchase(localPlayer, popupPassId)
-		end
-	end)
-	local close = UIStyle.button(frame, "X", UIStyle.Colors.Red, UDim2.fromOffset(44, 44), 26)
-	close.Name = "Close"
-	close.AnchorPoint = Vector2.new(1, 0)
-	close.Position = UDim2.new(1, -10, 0, 10)
-	close.Activated:Connect(function()
-		holder.Visible = false
-	end)
-	gui.Parent = localPlayer:WaitForChild("PlayerGui")
-	popup, buyButton = holder, buy
-end
+-- A locked station (not enough forests and no pass) says when it unlocks, in a banner (2026-10-09, the user's call:
+-- it used to open Roblox's buy prompt straight away, and 44 of the first ~190 new players got that popup, none
+-- bought; the pass is still in the SHOP's Stations tab). The server tells us once per treadmill visit and on each
+-- bench press; LOCKED_GAP keeps a double press to one banner.
+local LOCKED_GAP = 2 -- seconds
+local lastLocked = 0
 
 local function showLocked(multiplier: number, forestsNeeded: number?)
-	if not popup then
-		buildPopup()
-	end
-	local frame, title, body, buy = popup, popupTitle, popupBody, buyButton
-	if not (frame and title and body and buy) then
+	if os.clock() - lastLocked < LOCKED_GAP then
 		return
 	end
-	local needed = forestsNeeded or 0
-	title.Text = `{multiplier}x station locked`
-	body.Text = `Complete {needed} {if needed == 1 then "forest" else "forests"} to unlock it, or unlock it now.`
-	popupPassId = GameConfig.StationPasses[multiplier] or 0
-	if popupPassId == 0 then
-		buy.Text = "Coming soon"
-		buy.AutoButtonColor = false
-		UIStyle.recolor(buy, UIStyle.Colors.Grey)
-	else
-		local passId = popupPassId
-		local function label()
-			if popupPassId == passId then
-				buy.Text = `Unlock  {UIStyle.priceText(passId, Enum.InfoType.GamePass, label)}`
-			end
-		end
-		label()
-		buy.AutoButtonColor = true
-		UIStyle.recolor(buy, UIStyle.Colors.Green)
-	end
-	frame.Visible = true
+	lastLocked = os.clock()
+	local forests = forestsNeeded or 0
+	HUD.banner(
+		`{multiplier}x training unlocks at {forests} forest{if forests == 1 then "" else "s"} (or in the SHOP)`,
+		Color3.fromRGB(255, 200, 120)
+	)
 end
 
 function TrainingController.start()
@@ -357,6 +333,7 @@ function TrainingController.start()
 	-- After the Animator has posed everyone this frame, so the bench pose wins over the sit animation.
 	RunService.Stepped:Connect(function(_, dt)
 		stepBenches(dt)
+		poseCarriers()
 	end)
 	localPlayer.CharacterAdded:Connect(function()
 		runTrack = nil

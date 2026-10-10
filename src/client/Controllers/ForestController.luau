@@ -5,8 +5,8 @@
 -- OpenRow attribute). Each tile shows its state: unplanted (brown; the open row adds a pulsing rim),
 -- started (mossy with tufts, rim kept) and finished (mossy, no rim). Each planted plot gets its tree:
 -- the Assets.Trees model for its stage, offset, turned and sized from its tree seed so every client
--- sees the same tree. Every update bounces the tree and the finishing seed adds a leaf burst and a
--- chime. A new stage (8 of them, docs/plans/TreeStages.md) pops in from the old model's size with a small
+-- sees the same tree. Every update bounces the tree and the finishing seed adds a leaf burst (no
+-- sound). A new stage (8 of them, docs/plans/TreeStages.md) pops in from the old model's size with a small
 -- leaf puff, and a "bling" when the seeds were your own. When a row is finished a small moment plays, and
 -- when a whole section is finished the big
 -- one. During the break after a forest, setSway() sways every tree (M6). Answers plot lookups for
@@ -27,6 +27,7 @@ local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
 local HexGrid = require(Shared.HexGrid)
 local Remotes = require(Shared.Remotes)
+local Targeting = require(Shared.Targeting)
 local Trees = require(Shared.Trees)
 local Types = require(Shared.Types)
 local AncientTreeController = require(script.Parent.AncientTreeController)
@@ -42,10 +43,14 @@ local TEMPLATE_HEX_SIZE = 16 -- the Blender tile was modeled for HexSize 16
 -- highlight and the guide arrow.
 -- Smooth, flat colors (Roblox's Ground material with lighter colors was tried on 2026-10-07 and dropped the same day:
 -- SLAB_MATERIAL Ground, OPEN_COLOR 205, 150, 98, MOSS_COLOR 140, 215, 95).
+-- The wasteland (2026-10-09, the user's pick, colors only for now): an unplanted tile is dry, dusty ground with a dry
+-- grass border, and turns green with its first acorn, so planting brings the land back to life. A dusty tan, not the
+-- slate grey that looked ugly on 2026-10-07; OPEN_COLOR was the brown dirt before.
 local SLAB_MATERIAL = Enum.Material.SmoothPlastic
-local OPEN_COLOR = Color3.fromRGB(150, 103, 64)
+local OPEN_COLOR = Color3.fromRGB(158, 142, 116) -- dry wasteland (was 150, 103, 64: brown dirt)
 local MOSS_COLOR = Color3.fromRGB(104, 168, 68)
 local BORDER_COLOR = Color3.fromRGB(98, 160, 64)
+local DRY_BORDER_COLOR = Color3.fromRGB(150, 136, 96) -- an unplanted tile's dry grass edge
 local LEAF_TINT = 0.08 -- each tree's leaves vary in brightness by up to this much, from its tree seed
 local LEAF_HUE = 0.025 -- ... and in hue by up to this much
 local GOLD_COLOR = Color3.fromRGB(255, 205, 70)
@@ -64,9 +69,10 @@ local SIZE_JITTER = 0.1 -- trees are 90% to 110% of the model's size
 local SQUASH = 0.14 -- squash for one seed; more seeds in one update squash harder, up to SQUASH_MAX
 local SQUASH_MAX = 0.3
 local SINK = 0.2 -- trees sit this far into the tile so the roots don't float
+local BACKDROP_SIZE = { 0.95, 1.3 } -- the old forest's trees: full grown, a little bigger than a new forest's
+local BACKDROP_SINK = 0.6 -- they stand on the grass (no tile), a bit deeper
 local LEAF_COLORS = ColorSequence.new(Color3.fromRGB(120, 200, 80), Color3.fromRGB(200, 230, 90))
 local CHIME_ID = "rbxasset://sounds/electronicpingshort.wav" -- placeholder until there's real audio
-local FINISH_CHIME_VOLUME = 0.2 -- a tree reaching full grown (was the ring chime's 0.6; too loud, the user said 2026-10-08)
 local FINISH_LEAVES = 30
 local WAVE_SECONDS = 2 -- the ring moment's wave runs all the way around the ring in this long
 local WAVE_BOUNCE_SECONDS = 0.6
@@ -141,6 +147,7 @@ local plots: { Plot } = {}
 local byKey: { [string]: number } = {}
 local center = Vector3.zero
 local openRing = 0 -- the open ring (0 when the forest is complete)
+local lastRing = 0 -- the round's last ring (ForestState LastRing; 0 = every ring is in this forest)
 local seedsPerHex = GameConfig.Tiers[1].SeedsPerHex -- the current world's (ForestState SeedsPerHex; worlds differ)
 local snapshotSeq: number? = nil -- nil until the snapshot has been applied
 local pending: { Types.HexBatch } = {}
@@ -184,14 +191,67 @@ function ForestController.plotAt(q: number, r: number): Plot?
 	return if index then plots[index] else nil
 end
 
--- The open row is a whole ring (since 2026-10-07; was one section's slice of it): OpenRow is (0, ring).
+-- This server's ring order (ForestState OutsideIn: the layout A/B test), else GameConfig's.
+local function outsideInNow(): boolean
+	local value = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("OutsideIn")
+	return if typeof(value) == "boolean" then value else GameConfig.Grid.OutsideIn
+end
+
+local function isGrownAt(q: number, r: number): boolean
+	local plot = ForestController.plotAt(q, r)
+	return plot ~= nil and plot.seeds >= seedsPerHex
+end
+
+-- Rounds (GameConfig.Rounds): is `ring` in a forest whose last ring is `last` (ForestState LastRing; 0 = all)?
+local function inRoundFor(ring: number, last: number): boolean
+	if last == 0 then
+		return true
+	end
+	return if outsideInNow() then ring >= last else ring <= last
+end
+
+local function inRound(plot: Plot): boolean
+	return inRoundFor(plot.ring, lastRing)
+end
+
+-- The open row is a whole ring (since 2026-10-07; was one section's slice of it): OpenRow is (0, ring). Since
+-- 2026-10-09 the plots just behind its full-grown trees are open too (Targeting.isOpenPlot, the server's rule).
 function ForestController.isOpenPlot(plot: Plot): boolean
-	return plot.ring == openRing and plot.seeds < seedsPerHex
+	if not inRound(plot) then
+		return false
+	elseif ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("WholeRound") == true then
+		return openRing ~= 0 and plot.seeds < seedsPerHex -- a small round: all of it (the server's rule)
+	end
+	return Targeting.isOpenPlot(
+		plot.q,
+		plot.r,
+		plot.ring,
+		plot.seeds >= seedsPerHex,
+		openRing,
+		outsideInNow(),
+		GameConfig.Grid.AheadRings,
+		isGrownAt
+	)
 end
 
 function ForestController.isOpen(q: number, r: number): boolean
 	local plot = ForestController.plotAt(q, r)
 	return plot ~= nil and ForestController.isOpenPlot(plot)
+end
+
+-- The model of `species` (0 = this world's first Common tree) at `stage`, for the target's preview (TargetController).
+function ForestController.previewTemplate(stage: number, species: number): Model?
+	if species == 0 then
+		local tierId = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("TierId")
+		for _, tier in GameConfig.Tiers do
+			if tier.Id == tierId then
+				species = Trees.index(tier.Commons[1])
+			end
+		end
+	end
+	local modelName = Trees.model(species)
+	local template = modelName and treeTemplates:FindFirstChild(`{modelName}{stage}`)
+	return if template and template:IsA("Model") then template else nil
 end
 
 function ForestController.allPlots(): { Plot }
@@ -247,7 +307,7 @@ local function refreshPlot(plot: Plot)
 			plot.flowers = nil
 		end
 	end
-	plot.border.Color = BORDER_COLOR
+	plot.border.Color = if started then BORDER_COLOR else DRY_BORDER_COLOR
 	plot.slab.Color = if started then MOSS_COLOR else OPEN_COLOR
 end
 
@@ -552,12 +612,7 @@ local function updateTree(plot: Plot, added: number)
 		pose(plot, growth, 0, 0)
 	end
 	if added > 0 and plot.seeds >= seedsPerHex and plot.seeds - added < seedsPerHex then
-		leafBurst(canopy(plot), FINISH_LEAVES)
-		local ding = chime:Clone() -- from the burst part, so it plays from the tree
-		ding.Volume = FINISH_CHIME_VOLUME
-		ding.Parent = chime.Parent
-		ding:Play()
-		Debris:AddItem(ding, 2)
+		leafBurst(canopy(plot), FINISH_LEAVES) -- no sound (its placeholder ping was removed, the user's call 2026-10-08)
 	end
 end
 
@@ -573,6 +628,15 @@ local function applyEntries(entries: { number })
 			plot.starterUserId = entries[i + 4]
 			plot.treeSeed = entries[i + 5]
 			refreshPlot(plot)
+			if (before >= seedsPerHex) ~= (plot.seeds >= seedsPerHex) then
+				-- Finished (or emptied by a new forest): the plots behind it may open or close (two rings).
+				for _, n in HexGrid.neighbors(plot.q, plot.r) do
+					local neighbor = ForestController.plotAt(n.q, n.r)
+					if neighbor then
+						refreshPlot(neighbor)
+					end
+				end
+			end
 			if plot.species ~= beforeSpecies and plot.tree then
 				plot.treeStage = 0 -- a special seed turned it: rebuild it as the new tree
 			end
@@ -637,12 +701,6 @@ end
 -- rising chime, the next ring lights up, the Ancient Tree shakes, the Forest Bar pulses and a "Ring 3 of 9
 -- complete!" banner shows. When it was the last ring, only the wave plays: the forest complete cutscene
 -- (AwakeningController) is the moment.
--- This server's ring order (ForestState OutsideIn: the layout A/B test), else GameConfig's.
-local function outsideInNow(): boolean
-	local value = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("OutsideIn")
-	return if typeof(value) == "boolean" then value else GameConfig.Grid.OutsideIn
-end
-
 local function ringComplete(ring: number, opening: { Plot })
 	wave(ringPlots(ring), WAVE_SECONDS)
 	reveal(opening, WAVE_SECONDS)
@@ -685,6 +743,80 @@ local function onOpenRow(value: Vector2)
 	if moment then
 		ringComplete(beforeRing, opening)
 	end
+end
+
+-- A round grew (ForestState LastRing, GameConfig.Rounds): the open rims follow, and a banner says how many rings this
+-- forest has. Tiles outside the round stay as wasteland, like every unplanted tile.
+local function onLastRing(value: number)
+	local before = lastRing
+	lastRing = value
+	if not ForestController.ready() then
+		return -- the snapshot build refreshes every plot
+	end
+	for _, plot in plots do
+		refreshPlot(plot)
+	end
+	if before ~= 0 and value ~= before then -- rounds only grow
+		local rings = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("RingCount")
+		HUD.banner(`The forest grows! {rings} rings to plant`)
+	end
+end
+
+-- The old forest on the town's side (2026-10-09, the user's ask: the grass behind the town looked empty): a
+-- full-grown tree of this world's Common trees on every spot the server sent (Snapshot.backdrop), turned, offset,
+-- sized and shaded from the spot itself, so every client sees the same forest. Nothing to touch or plant; built
+-- again when the world changes.
+local backdropSpots: { number } = {}
+local backdropFolder: Folder? = nil
+
+local function buildBackdrop()
+	if backdropFolder then
+		backdropFolder:Destroy()
+		backdropFolder = nil
+	end
+	if #backdropSpots == 0 then
+		return
+	end
+	local tierId = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("TierId")
+	local commons = GameConfig.Tiers[1].Commons
+	for _, tier in GameConfig.Tiers do
+		if tier.Id == tierId then
+			commons = tier.Commons
+		end
+	end
+	local stage = #GameConfig.Growth.StageStarts
+	local hexSize = GameConfig.Grid.HexSize
+	local folder = Instance.new("Folder")
+	folder.Name = "OldForest"
+	for i = 1, #backdropSpots // 3 do
+		local q, r, y = backdropSpots[i * 3 - 2], backdropSpots[i * 3 - 1], backdropSpots[i * 3]
+		local rng = Random.new(q * 7919 + r * 104729)
+		local modelName = Trees.model(Trees.index(commons[rng:NextInteger(1, #commons)]))
+		local template = modelName and treeTemplates:FindFirstChild(`{modelName}{stage}`)
+		if template and template:IsA("Model") then
+			local model = template:Clone()
+			local leafShade = 1 + (rng:NextNumber() * 2 - 1) * LEAF_TINT
+			local hueShift = (rng:NextNumber() * 2 - 1) * LEAF_HUE
+			for _, part in model:GetDescendants() do
+				if part:IsA("BasePart") then
+					if not string.find(part.Name, "_Bark") then
+						local h, sat, v = part.Color:ToHSV()
+						part.Color = Color3.fromHSV((h + hueShift) % 1, sat, math.clamp(v * leafShade, 0, 1))
+					end
+					part.Anchored, part.CanTouch, part.CanCollide, part.CanQuery = true, false, false, false
+				end
+			end
+			model:ScaleTo(BACKDROP_SIZE[1] + rng:NextNumber() * (BACKDROP_SIZE[2] - BACKDROP_SIZE[1]))
+			local flat = HexGrid.toWorld(q, r, hexSize, center)
+			local angle = rng:NextNumber() * 2 * math.pi
+			local distance = rng:NextNumber() * GameConfig.Grid.TreeJitterFraction * hexSize
+			local at = Vector3.new(flat.X + math.cos(angle) * distance, y - BACKDROP_SINK, flat.Z + math.sin(angle) * distance)
+			model:PivotTo(CFrame.new(at) * CFrame.Angles(0, rng:NextNumber() * 2 * math.pi, 0))
+			model.Parent = folder
+		end
+	end
+	folder.Parent = view
+	backdropFolder = folder
 end
 
 local function fetchSnapshot(): Types.Snapshot
@@ -771,8 +903,6 @@ local function makeEffects()
 	stageSound.SoundId = STAGE_SOUND_ID
 	stageSound.Volume = STAGE_NOTE_VOLUME
 	stageSound.SoundGroup = Sounds.effects()
-	chime.RollOffMaxDistance = 200
-	chime.Parent = burstPart
 end
 
 function ForestController.start()
@@ -819,6 +949,14 @@ function ForestController.start()
 	forestState:GetAttributeChangedSignal("OpenRow"):Connect(function()
 		onOpenRow(forestState:GetAttribute("OpenRow") :: Vector2)
 	end)
+	local function lastRingNow(): number
+		local value = forestState:GetAttribute("LastRing")
+		return if typeof(value) == "number" then value else 0
+	end
+	forestState:GetAttributeChangedSignal("LastRing"):Connect(function()
+		onLastRing(lastRingNow())
+	end)
+	lastRing = lastRingNow()
 
 	local snapshot = fetchSnapshot()
 	local started = os.clock()
@@ -828,6 +966,9 @@ function ForestController.start()
 	local row = forestState:GetAttribute("OpenRow") :: Vector2
 	openRing = row.Y
 	build(snapshot)
+	backdropSpots = snapshot.backdrop or {}
+	buildBackdrop()
+	forestState:GetAttributeChangedSignal("TierId"):Connect(buildBackdrop) -- the old forest takes the new world's trees
 	view.Parent = workspace
 	snapshotSeq = snapshot.seq
 	for _, batch in pending do

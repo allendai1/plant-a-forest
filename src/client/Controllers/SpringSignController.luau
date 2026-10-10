@@ -1,5 +1,5 @@
 --!strict
--- SpringSignController: the "2X TRAINING" sign over the Ancient Spring during the break after a forest (2026-10-08,
+-- SpringSignController: the "2X TRAINING / INSIDE" sign over the Ancient Spring during the break after a forest (2026-10-08,
 -- the user's ask, like Build the Pyramid's "10X TRAINING INSIDE"). A rainbow sweeps through the letters and soft sun
 -- rays turn behind them, breathing in size and brightness. (The text itself doesn't pulse: Roblox draws text at whole
 -- font sizes, so a small size pulse stepped instead of moving smoothly.) It floats over the World Tree (seen through the trunk), sized in
@@ -8,9 +8,10 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
-local HEIGHT = 30 -- studs over the hub's center
+local HEIGHT = 30 -- studs over the Spring's floor (up in the World Tree since 2026-10-09: Awakening.SpringHeightStuds)
 local SIGN_STUDS = 40 -- the sign's width in the world
 local DESIGN = Vector2.new(640, 200) -- the layout's size in pixels before it's scaled to the sign
 local MAX_DISTANCE = 450
@@ -21,6 +22,7 @@ local RAINBOW_SPEED = 0.7 -- turns of the rainbow per second
 local RAYS_PULSE = 0.12 -- the rays grow and shrink by this fraction
 local RAYS_FADE = { 0.05, 0.4 } -- their transparency at the biggest and smallest
 local PULSE_SPEED = 2.5 -- radians per second
+local INSIDE_SIZE = 60 -- "INSIDE" under "2X TRAINING" (96)
 
 local SpringSignController = {}
 
@@ -32,7 +34,8 @@ function SpringSignController.start()
 	anchor.Size = Vector3.one
 	anchor.Transparency = 1
 	anchor.Anchored, anchor.CanCollide, anchor.CanQuery, anchor.CanTouch = true, false, false, false
-	anchor.Position = (if typeof(center) == "Vector3" then center else Vector3.zero) + Vector3.new(0, HEIGHT, 0)
+	anchor.Position = (if typeof(center) == "Vector3" then center else Vector3.zero)
+		+ Vector3.new(0, GameConfig.Awakening.SpringHeightStuds + HEIGHT, 0)
 	anchor.Parent = workspace
 
 	local sign = Instance.new("BillboardGui")
@@ -69,9 +72,19 @@ function SpringSignController.start()
 	text.Name = "Training"
 	text.AutomaticSize = Enum.AutomaticSize.None
 	text.AnchorPoint = Vector2.new(0.5, 0.5)
-	text.Position = UDim2.fromScale(0.5, 0.5)
+	text.Position = UDim2.fromScale(0.5, 0.4)
 	text.Size = UDim2.fromScale(1, 0.6)
 	text.ZIndex = 2
+	-- "INSIDE" under it (2026-10-09, the user's ask, like Build the Pyramid's "10X TRAINING INSIDE"): the boost is
+	-- for standing inside the World Tree, and players didn't know to walk in.
+	local up = GameConfig.Awakening.SpringHeightStuds > 0 -- "UP TOP" once the Spring is up in the tree (2026-10-09)
+	local inside = UIStyle.text(content, if up then "UP TOP" else "INSIDE", INSIDE_SIZE)
+	inside.Name = "Inside"
+	inside.AutomaticSize = Enum.AutomaticSize.None
+	inside.AnchorPoint = Vector2.new(0.5, 0.5)
+	inside.Position = UDim2.fromScale(0.5, 0.84)
+	inside.Size = UDim2.fromScale(1, 0.32)
+	inside.ZIndex = 2
 	-- The rainbow tints the letters' colored face (UIStyle.text draws Face over a Shadow); the face is white.
 	local face = text:FindFirstChild("Face")
 	local rainbow = Instance.new("UIGradient")

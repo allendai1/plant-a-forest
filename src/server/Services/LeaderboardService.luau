@@ -4,7 +4,7 @@
 --   values are written every WriteSeconds (only when changed) and when they leave; the top Size are read every
 --   ReadSeconds and published as JSON in ReplicatedStorage.Leaderboards.<Stat> (a StringValue:
 --   [{ id, name, value }]). LeaderboardController draws them on the lobby boards.
--- - In-server: a leaderstats folder (Strength, Seeds, Speed) so Roblox's player list shows and sorts them.
+-- - In-server: a leaderstats folder (Forests, Seeds, Strength, Speed) so Roblox's player list shows and sorts them.
 -- Studio play sessions use their own stores (suffix _Studio), like DataService.
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -18,10 +18,11 @@ local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 
 local SUFFIX = if RunService:IsStudio() then "_Studio" else ""
 -- The player list's columns: attribute -> column name (the first one sorts the list).
--- Strength, Seeds (lifetime seeds planted) and Speed since 2026-10-08, like the lobby boards (was Strength, Forests).
+-- Forests, Seeds (lifetime seeds planted), Strength and Speed since 2026-10-08, like the lobby boards.
 local PLAYER_LIST = {
-	{ attribute = "Strength", name = "Strength" },
+	{ attribute = "ForestsCompleted", name = "Forests" },
 	{ attribute = "SeedsPlanted", name = "Seeds" },
+	{ attribute = "Strength", name = "Strength" },
 	{ attribute = "Speed", name = "Speed" },
 }
 
@@ -117,9 +118,21 @@ local function onPlayerAdded(player: Player)
 	written[player] = {}
 	local stats = Instance.new("Folder")
 	stats.Name = "leaderstats"
-	for _, column in PLAYER_LIST do
+	-- Roblox's player list doesn't keep the creation order (it showed Speed, Strength, Forests, Seeds), so each
+	-- column gets a Priority value (lower shows first) and the first one is marked IsPrimary (the list sorts by it).
+	for i, column in PLAYER_LIST do
 		local value = Instance.new("NumberValue")
 		value.Name = column.name
+		local priority = Instance.new("NumberValue")
+		priority.Name = "Priority"
+		priority.Value = i
+		priority.Parent = value
+		if i == 1 then
+			local primary = Instance.new("BoolValue")
+			primary.Name = "IsPrimary"
+			primary.Value = true
+			primary.Parent = value
+		end
 		local function sync()
 			local attribute = player:GetAttribute(column.attribute)
 			value.Value = if typeof(attribute) == "number" then math.floor(attribute) else 0

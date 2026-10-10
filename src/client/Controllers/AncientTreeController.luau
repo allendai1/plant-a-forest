@@ -95,7 +95,7 @@ local SPARKLE_TEXTURE = "rbxassetid://88252539838654"
 local PETAL_RATE = { 3, 40 } -- per second, from the sapling to full grown
 local SWAP_WAIT_SECONDS = 4 -- a world change waits this long at most for the tree to shrink first
 local INSIDE_FADE = 0.75 -- how see-through the tree gets while you stand in the spring circle (1 = invisible)
-local INSIDE_HEIGHT = 30 -- the circle counts up to this far above the hub center (TrainingService SPRING_HEIGHT)
+local INSIDE_HEIGHT = 30 -- the circle counts up to this far above the Spring's floor (TrainingService SPRING_HEIGHT)
 local FADE_RATE = 6 -- how fast the fade follows you in and out (higher is quicker)
 
 local AncientTreeController = {}
@@ -485,9 +485,11 @@ function AncientTreeController.build(base: Vector3)
 		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 		local inside = false
 		if rootPart and rootPart:IsA("BasePart") then
+			-- On the climb too (2026-10-09): anywhere within the ramp's outer edge, up to the Spring's platform.
+			local a = GameConfig.Awakening
+			local reach = math.max(a.SpringRadiusStuds, a.Climb.Radius + a.Climb.Width / 2)
 			local offset = rootPart.Position - root.Position
-			inside = Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Awakening.SpringRadiusStuds
-				and offset.Y <= INSIDE_HEIGHT
+			inside = Vector2.new(offset.X, offset.Z).Magnitude <= reach and offset.Y <= a.SpringHeightStuds + INSIDE_HEIGHT
 		end
 		local goal = if inside then INSIDE_FADE else 0
 		fade += (goal - fade) * math.min(1, dt * FADE_RATE)

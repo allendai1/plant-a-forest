@@ -241,6 +241,8 @@ function SettingsController.start()
 	buildToggle(panel, 3, "GuideArrow", "Guide arrow", "Points to the nearest open plot")
 	buildToggle(panel, 4, "Music", "Music", "Background music")
 	buildToggle(panel, 5, "Effects", "Sound effects", "Clicks, coins, footsteps and more")
+	-- The server's published place version (0 in Studio), to spot an outdated server (2026-10-09, the user's ask).
+	UIStyle.text(panel, `Version {game.PlaceVersion}`, 16, UIStyle.GREY).LayoutOrder = 6
 	for _, name in { "Speed", "WalkCap" } do
 		localPlayer:GetAttributeChangedSignal(name):Connect(refreshWalk)
 	end

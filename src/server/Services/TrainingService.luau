@@ -6,8 +6,8 @@
 -- Either way, every full RepSeconds on an unlocked station pays RepAmount * the station's multiplier,
 -- timed per player from the moment they start. Getting off drops the unfinished rep.
 -- The Ancient Spring (M6): during the break after a forest, standing within SpringRadiusStuds of the
--- hub center trains Strength and Speed together, RepAmount * your best unlocked station * the spring multiplier each per rep.
--- GUI pass: every gain is also times the player's boost pass (PassService.boost) and, while it runs, the
+-- hub center, on the platform up in the World Tree (SpringHeightStuds; TreeClimbService, 2026-10-09), trains Strength and Speed together, RepAmount * your best unlocked station * the spring multiplier each per rep.
+-- GUI pass: every gain is also times the player's boost (PassService.boost) and, while it runs, the
 -- server training boost bought in the Robux shop (ForestState ServerBoostEndsAt, ServerBoostBy and
 -- ServerBoosts, a purchase count clients watch for the banner).
 -- Seed shop: also times the special trees' boosts (ForestService.ownerBoost and serverBoost).
@@ -29,7 +29,7 @@ local Analytics = require(script.Parent.Parent.Analytics)
 local BENCH_TAG = "BenchStation"
 local TREADMILL_TAG = "TreadmillStation"
 local LEAVE_OFFSET = CFrame.new(0, 0, -7) -- where a player stands after getting up, in the seat's frame
-local SPRING_HEIGHT = 30 -- the spring counts up to this far above the hub center (not up in the tree)
+local SPRING_HEIGHT = 30 -- the spring counts up to this far above its floor (not on the ramp below it)
 local SPRING = Instance.new("Folder") -- stands for the Ancient Spring as a player's station
 
 type Session = {
@@ -234,7 +234,10 @@ local function inSpring(root: BasePart?): boolean
 		return false
 	end
 	local offset = root.Position - origin
-	return Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Awakening.SpringRadiusStuds and offset.Y <= SPRING_HEIGHT
+	local above = offset.Y - GameConfig.Awakening.SpringHeightStuds -- over the Spring's floor
+	return Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Awakening.SpringRadiusStuds
+		and above >= -1
+		and above <= SPRING_HEIGHT
 end
 
 local function step(dt: number)
@@ -269,6 +272,9 @@ local function step(dt: number)
 			session.elapsed = if station then dt else 0
 			player:SetAttribute("Running", station ~= nil and station ~= SPRING and stat == "Speed")
 			player:SetAttribute("InSpring", station == SPRING)
+			if station == SPRING then
+				DataService.set(player, "SpringGuideSeen", 1) -- the first-break guide is done (TutorialController)
+			end
 		elseif station then
 			session.elapsed += dt
 			local reps = math.floor(session.elapsed / stats.RepSeconds)

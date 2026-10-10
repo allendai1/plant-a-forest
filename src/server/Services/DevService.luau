@@ -25,6 +25,9 @@ local STATS: { [string]: DataService.StatKey } = {
 	setBulkPlantLevel = "BulkPlantLevel",
 	setPlantingRangeLevel = "PlantingRangeLevel",
 	setTutorialStep = "TutorialStep", -- 8 = done (GameConfig.Tutorial.DoneStep)
+	setFirstTreeDone = "FirstTreeDone", -- 0: your next finished tree is your "first" again
+	setSpringGuideSeen = "SpringGuideSeen", -- 0: the first-break guide shows again
+	setQuestIndex = "QuestIndex", -- the starter quest you're on (1-8; 9 = all done)
 }
 
 local UPGRADE_BUYS: { [string]: string } = {
@@ -108,6 +111,9 @@ local function run(player: Player, command: string, value: number): boolean
 	elseif command == "buyBar" then -- value = which button (1-4)
 		local boost = GameConfig.BarBoosts[value]
 		return fakeBuy(player, boost and boost.ProductId)
+	elseif command == "buyStrengthBoost" or command == "buySpeedBoost" then -- value = the boost's step (1 = first)
+		local step = GameConfig.Boosts[if command == "buyStrengthBoost" then "Strength" else "Speed"][value]
+		return fakeBuy(player, step and step.ProductId)
 	elseif command == "buyServerBoost" then
 		return fakeBuy(player, GameConfig.ServerBoost.ProductId)
 	elseif UPGRADE_BUYS[command] then -- value = the level's product
@@ -118,6 +124,7 @@ local function run(player: Player, command: string, value: number): boolean
 	elseif command == "buySeed" and GameConfig.SeedShop.Seeds[value] then -- the seed's Robux product, faked
 		return fakeBuy(player, GameConfig.SeedShop.Seeds[value].ProductId)
 	elseif command == "setTier" and GameConfig.Tiers[value] then -- start a fresh forest in this world
+		AwakeningService.stop() -- a break still running would keep the last forest's spring multiplier
 		ForestService.setTier(value)
 		ForestService.reset()
 		return true

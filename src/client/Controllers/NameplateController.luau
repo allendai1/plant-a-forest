@@ -128,11 +128,18 @@ local function attach(player: Player, character: Model)
 end
 
 local function watch(player: Player)
-	player.CharacterAdded:Connect(function(character)
+	local function follow(character: Model)
 		attach(player, character)
-	end)
+		-- A new head (the gnome look swaps it right after spawning, OutfitService; streaming can too): attach again.
+		character.ChildAdded:Connect(function(child)
+			if child.Name == "Head" then
+				attach(player, character)
+			end
+		end)
+	end
+	player.CharacterAdded:Connect(follow)
 	if player.Character then
-		task.spawn(attach, player, player.Character)
+		task.spawn(follow, player.Character)
 	end
 	-- The rank follows the forest count; your own rank-up gets a banner.
 	local lastRank = GameConfig.rankFor(forestsOf(player)).Name

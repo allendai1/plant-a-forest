@@ -8,11 +8,15 @@
 -- Forest Ranger, set up and edited in Studio) is copied onto the same body part of the owner's character.
 -- An NPC of each character (a model in Workspace.Map, dressed in Studio) stands by the upgrade shop's ring with a
 -- prompt that sells its pass, and a copy goes to Assets.Outfits.<Outfit>Preview for the Robux shop's character cards.
+-- The gnome (2026-10-09, GameConfig.Gnome): everyone's avatar is replaced by the forest gnome (the player's own avatar
+-- isn't loaded at all: StarterPlayer.LoadCharacterAppearance off) on every spawn, before the character outfit goes on
+-- top. Owning a character outfit leaves the gnome's cap off for that character's own hat.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local StarterPlayer = game:GetService("StarterPlayer")
 
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 
@@ -109,19 +113,61 @@ local function dress(player: Player)
 	end
 end
 
-local function onPlayerAdded(player: Player)
-	player.CharacterAppearanceLoaded:Connect(function()
-		dress(player)
-	end)
-	player:GetAttributeChangedSignal("HandsSpeed"):Connect(function()
-		dress(player)
-	end)
-	if player.Character then
+-- The forest gnome's whole look (GameConfig.Gnome), without the cap when a character outfit brings its own hat.
+local function gnome(withCap: boolean): HumanoidDescription
+	local g = GameConfig.Gnome
+	local look = Instance.new("HumanoidDescription")
+	look.Head = g.Head
+	look.MoodAnimation = g.Mood
+	for _, part in { "HeadColor", "TorsoColor", "LeftArmColor", "RightArmColor", "LeftLegColor", "RightLegColor" } do
+		(look :: any)[part] = g.Skin
+	end
+	local accessories = {
+		{ AccessoryType = Enum.AccessoryType.Face, AssetId = g.Beard, IsLayered = false },
+		{ AccessoryType = Enum.AccessoryType.Eyebrow, AssetId = g.Brows, IsLayered = false },
+	}
+	if withCap then
+		table.insert(accessories, { AccessoryType = Enum.AccessoryType.Hat, AssetId = g.Hat, IsLayered = false })
+	end
+	look:SetAccessories(accessories, true)
+	return look
+end
+
+-- The gnome first (it replaces everything worn), then the character outfit on top.
+local function dressAll(player: Player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if GameConfig.Gnome.Enabled and humanoid then
+		local ok, err = pcall(humanoid.ApplyDescriptionAsync, humanoid, gnome(outfitFor(player) == nil))
+		if not ok then
+			warn(`[OutfitService] gnome look for {player.Name}: {err}`)
+		end
+	end
+	if player.Character == character then -- not respawned while the look loaded
 		dress(player)
 	end
 end
 
+local function onPlayerAdded(player: Player)
+	player.CharacterAdded:Connect(function(character)
+		character:WaitForChild("Humanoid", 10)
+		if not character.Parent then
+			character.AncestryChanged:Wait() -- ApplyDescription needs the character in the world
+		end
+		dressAll(player)
+	end)
+	player:GetAttributeChangedSignal("HandsSpeed"):Connect(function()
+		dressAll(player)
+	end)
+	if player.Character then
+		task.spawn(dressAll, player)
+	end
+end
+
 function OutfitService.init()
+	if GameConfig.Gnome.Enabled then
+		StarterPlayer.LoadCharacterAppearance = false -- the gnome replaces the avatar; don't load it first
+	end
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)

@@ -1,6 +1,6 @@
 # MVP build plan
 
-Goal: tier 1 (Meadow Woods) playable start to finish with Common trees (the low-poly leafy tree and pine) and Rain. The redesign of 2026-10-06 is in `docs/DESIGN_CHANGES.md`. Build in this order; each milestone should run in Studio before the next starts. Numbers come from `src/shared/GameConfig.luau`.
+Goal: tier 1 (Meadow Woods) playable start to finish with Common trees (the low-poly leafy tree and pine) and Rain. The redesign of 2026-10-06 is in [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md). Build in this order; each milestone should run in Studio before the next starts. Numbers come from `src/shared/GameConfig.luau`.
 
 ## M0. Project setup
 
@@ -42,7 +42,7 @@ Done when: benching and the treadmill pay +1 × the station multiplier per rep, 
 ## M3. Seed rack and carrying
 
 - [x] Seed rack prompt in the hub: each press grabs `BulkPickup` seeds (1 by default), up to capacity; holding E repeats every `HoldRepeatSeconds` (run by the server from the prompt's press and release)
-- [x] Giant seed placeholder over the head, scaled by the number of seeds carried (using the `GiantSeedMilestones` thresholds), with a count label (replaced on 2026-10-06 by acorns circling the head, `docs/plans/AcornOrbit.md`)
+- [x] Giant seed placeholder over the head, scaled by the number of seeds carried (using the `GiantSeedMilestones` thresholds), with a count label (replaced on 2026-10-06 by acorns circling the head, [docs/plans/AcornOrbit.md](plans/AcornOrbit.md))
 - [x] Carried count lives on the server
 
 Done when: one player can fill to capacity by holding E, and the giant seed visibly grows at 5 and 15 seeds.
@@ -67,7 +67,7 @@ Done when: two clients can plant into the same tree, and a spoofed remote (wrong
 - [x] Tile states: open tiles pulse, started tiles turn mossy with a glowing rim, finished tiles mossy
 - [x] Every seed: squash-and-stretch bounce, +1 coin to the planter
 - [x] Finishing seed: leaf burst and chime placeholder
-- [x] Ring complete moment: the wave around the ring, golden sweep, the next ring lights up, banner (after M5: replaced by a small row moment and the big section complete moment, see `docs/DESIGN_CHANGES.md`)
+- [x] Ring complete moment: the wave around the ring, golden sweep, the next ring lights up, banner (after M5: replaced by a small row moment and the big section complete moment, see [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md))
 - [x] Forest Bar replicated via an attribute; HUD bar shows seeds / target; the Ancient Tree in the hub grows with the bar
 - [ ] ~~Starter's name shows when walking near a tree~~ (postponed 2026-10-06; the starter UserId is still stored per plot)
 
@@ -75,7 +75,7 @@ Done when: a full trip shows bounces on every seed and a stage swap at every sta
 
 ## M6. Forest Awakening
 
-- [x] When the bar fills: a skippable cutscene of the Ancient Tree awakening, then a 2-minute break (trees sway, placeholder animals); changed from a 2-minute locked sequence, see `docs/plans/M6.md`
+- [x] When the bar fills: a skippable cutscene of the Ancient Tree awakening, then a 2-minute break (trees sway, placeholder animals); changed from a 2-minute locked sequence, see [docs/plans/M6.md](plans/M6.md)
 - [x] Everyone online gets +500 coins and +1 forests completed (changed from a 50-seed chest)
 - [ ] ~~Server-wide 2x coins for 10 minutes~~ (left out for now)
 - [x] The Ancient Spring: 2x/3x/5x Strength and Speed during the break; Robux extensions of the break (doubling prices, up to 8 minutes)
@@ -127,7 +127,7 @@ Done when: a new player plants their first seed within 20 seconds without readin
 - [x] Blender animals for the break; leaf and bark tints from each tree's seed
 - [ ] 60 fps with a full forest: moved to M12 (measured 15 fps at maximum graphics quality, 60 at automatic from the spawn)
 
-Done when: screenshots match the references, everything still works, and Studio holds 60 fps with a full forest. Plan: `docs/plans/M11.md`.
+Done when: screenshots match the references, everything still works, and Studio holds 60 fps with a full forest. Plan: [docs/plans/M11.md](plans/M11.md).
 
 ## M12. Performance pass (moved after the art pass, 2026-10-06)
 
@@ -142,4 +142,4 @@ Done when: a full forest runs smoothly on mobile.
 
 - **Phase 1, weather update:** Snowfall, Thunderstorm, Meteor shower and Golden hour; weather totems.
 - **Phase 2, second tier:** Cherry Blossom Valley (same map re-themed, seeds per hex rescaled, about 92), the loop back to tier 1, leaderboards.
-- **Backlog:** see the end of `docs/GDD.md`.
+- **Backlog:** see the end of [docs/GDD.md](GDD.md).

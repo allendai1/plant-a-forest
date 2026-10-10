@@ -31,6 +31,14 @@ export type Profile = {
 	PlantingRangeLevel: number,
 	SeedsPlanted: number, -- lifetime (M10: the tutorial step comes from it)
 	FreeGiftClaimed: number, -- 0 or 1
+	SpringGuideSeen: number, -- 1 once they've stood in the Ancient Spring (the first-break guide stops)
+	FirstTreeDone: number, -- 1 once they've finished a tree (the first one pays Economy.FirstTreeCoins)
+	QuestIndex: number, -- the starter quest they're on (GameConfig.Quests; past the end = all done)
+	TreesFinished: number, -- trees they planted the last acorn of, ever (a quest counts it)
+	RingsHelped: number, -- rings that finished while they'd planted in them, ever (a quest counts it)
+	GroupGiftClaimed: number, -- 0 or 1: joined the group at the group gift board (EconomyService)
+	StrengthBoostBought: number, -- the highest Strength boost bought (a developer product; 1 = none)
+	SpeedBoostBought: number, -- the highest Speed boost bought (1 = none)
 	WalkCap: number, -- the player's own walk speed limit (0 = none)
 	GuideArrow: number, -- the guide arrow setting: 1 = shown, 0 = hidden
 	TutorialStep: number, -- 0 = story intro not seen, then GameConfig.Tutorial.Steps, DoneStep = finished
@@ -53,6 +61,14 @@ export type StatKey =
 	| "PlantingRangeLevel"
 	| "SeedsPlanted"
 	| "FreeGiftClaimed"
+	| "SpringGuideSeen"
+	| "FirstTreeDone"
+	| "QuestIndex"
+	| "TreesFinished"
+	| "RingsHelped"
+	| "GroupGiftClaimed"
+	| "StrengthBoostBought"
+	| "SpeedBoostBought"
 	| "WalkCap"
 	| "GuideArrow"
 	| "Music"
@@ -61,7 +77,7 @@ export type StatKey =
 	| "PlayTimeSeconds"
 	| "ShopRestock"
 
-local VERSION = 1 -- bump when a field is renamed or reshaped, and add a step to migrate()
+local VERSION = 2 -- bump when a field is renamed or reshaped, and add a step to migrate()
 local TEMPLATE: Profile = {
 	Version = VERSION,
 	Strength = 0,
@@ -73,6 +89,14 @@ local TEMPLATE: Profile = {
 	PlantingRangeLevel = 0,
 	SeedsPlanted = 0,
 	FreeGiftClaimed = 0,
+	SpringGuideSeen = 0,
+	FirstTreeDone = 0,
+	QuestIndex = 1,
+	TreesFinished = 0,
+	RingsHelped = 0,
+	GroupGiftClaimed = 0,
+	StrengthBoostBought = 1,
+	SpeedBoostBought = 1,
 	WalkCap = 0,
 	GuideArrow = 1,
 	Music = 1,
@@ -102,6 +126,12 @@ local profiles: { [Player]: Profile } = {} -- its Data table, which is what gets
 
 -- Brings an older save up to VERSION, one step at a time. Nothing to migrate yet.
 local function migrate(data: Profile)
+	if data.Version < 2 then
+		-- Planting Range went from 10 levels of +4 studs to 4 levels of +28 (one tree each) on 2026-10-09. Rounded up,
+		-- so nobody loses reach: old levels 1-7 become 1, 8-10 become 2.
+		data.PlantingRangeLevel =
+			math.min(math.ceil(data.PlantingRangeLevel * 4 / 28), GameConfig.Upgrades.PlantingRange.MaxLevel)
+	end
 	data.Version = VERSION
 end
 
@@ -121,8 +151,15 @@ local function load(player: Player)
 	session:Reconcile() -- fills in fields added to TEMPLATE since this save was made
 	local data = session.Data :: Profile
 	migrate(data)
+	-- ponytail: a save from before FirstTreeDone with 50+ acorns planted almost surely finished a tree already, so
+	-- it gets no "first tree" reward; a few with fewer may get it late.
+	if data.FirstTreeDone == 0 and data.SeedsPlanted >= 50 then
+		data.FirstTreeDone = 1
+	end
 	if data.TutorialStep == 0 and data.SeedsPlanted > 0 then
 		data.TutorialStep = GameConfig.Tutorial.DoneStep -- played before the tutorial had saved steps
+	elseif data.TutorialStep == 0 and not GameConfig.Features.TutorialIntro then
+		data.TutorialStep = 1 -- skip the story intro
 	end
 	session.OnSessionEnd:Connect(function()
 		sessions[player] = nil

@@ -60,7 +60,7 @@ Seeds per tree = players × `SeedsPerPlayer` (Sherwood 1,500, the other worlds 3
 
 ## Tutorial
 
-A big drop at one step of the Tutorial funnel means that step is the problem. Steps 2–3 are the long walks; the fix ready for that is a walk-speed boost during the tutorial (`docs/plans/DesignReview.md`). Step 3 is the 20-Strength training target.
+A big drop at one step of the Tutorial funnel means that step is the problem. Steps 2–3 are the long walks; the fix ready for that is a walk-speed boost during the tutorial ([docs/plans/DesignReview.md](DesignReview.md)). Step 3 is the 20-Strength training target.
 
 ## Forest length (logged since 2026-10-08)
 
@@ -74,6 +74,6 @@ Forest length is the most direct sign of whether the stats curve and the forest 
 
 ## Background for the decision
 
-- **Model estimates** (`docs/plans/DesignReview.md`): about 12K coins an hour at 1 h, 68K at 10 h and 139K at 100 h. Upgrades max out (4.36M coins) at about 45–50 h. A whale (max Bulk + Forest Lord) fills a forest alone in about 7–20 min.
+- **Model estimates** ([docs/plans/DesignReview.md](DesignReview.md)): about 12K coins an hour at 1 h, 68K at 10 h and 139K at 100 h. Upgrades max out (4.36M coins) at about 45–50 h. A whale (max Bulk + Forest Lord) fills a forest alone in about 7–20 min.
 - **Build the Pyramid comparison:** our capacity curve matches their readings up to 105K Strength, but not above. Three high readings, 120.82M → 5,200, 567.83M → 11,252 and 12.841B → 53,439 (2026-10-07), all sit on capacity ≈ 0.4725 × √Strength (within 0.2%; ours gives 12,277 at 12.841B, 4.4x low), so it's their curve steepening, not a bonus. Ours gives 2,262 and 3,966 there (2.3x and 2.8x low). `max(our curve, 0.4725 × √Strength)` fits all seven readings (it takes over from ours around 400K Strength). **Applied 2026-10-07** at the user's request: `Stats.Capacity.Sqrt = 0.4725` in GameConfig, capacity = the bigger of the two. With per-press Bulk capped at 13, a much bigger capacity doesn't make forests much faster.
 - **Training pace (btp3 clip, 2026-10-07):** a player at +40 a rep gained 2,109 Strength in 14 s, so about 150 a second, or 3.77 reps a second (a rep every ~0.266 s). Ours is a rep every 0.25 s (`Stats.RepSeconds`), about 6% faster. The same clip shows Strength 247,552 → capacity 253 (ours 235, 7% low) and 249,364 → 254.

@@ -18,6 +18,7 @@ local CollectionService = game:GetService("CollectionService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
@@ -36,10 +37,20 @@ local PIP = 13 -- level pip size
 local PIP_ON = Color3.fromRGB(255, 205, 80)
 local PIP_OFF = Color3.fromRGB(40, 32, 26)
 local GROW = 1.4 -- the upgrade shop opens this much bigger than the HUD scale (1.25 until the user asked for bigger)
+local SPOT_PULSE = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true) -- the tutorial spotlight ring
 local SEEDS_HEIGHT = 568 -- the seed page: the restock line and five 96-pixel cards, no scrolling
 local SEEDS_HEIGHT_TOUCH = 300 -- phones: about three cards, the rest scroll
 
-type Row = { id: string, frame: Frame, detail: TextLabel, pips: { Frame }, button: TextButton, robux: TextButton }
+type Row = {
+	id: string,
+	frame: Frame,
+	detail: TextLabel,
+	pips: { Frame },
+	button: TextButton,
+	robux: TextButton,
+	spot: Frame,
+	shade: Frame,
+}
 type SeedRow = { def: GameConfig.SeedDef, frame: Frame, stock: TextLabel, button: TextButton, robux: TextButton }
 
 local ShopController = {}
@@ -106,12 +117,25 @@ end
 local function effect(id: string, level: number): string
 	local value = GameConfig.upgradeValue(id, level)
 	if id == "PlantingRange" then
-		return `{GameConfig.Planting.BaseRangeStuds + value} studs`
+		local trees = level + 1 -- each level reaches one more tree
+		return `Reach {trees} tree{if trees == 1 then "" else "s"}`
 	end
 	return `{value} per press`
 end
 
+-- The tutorial's shop step (2026-10-09, the user's ask): a pulsing gold ring and "Buy this first!" on
+-- Tutorial.ShopUpgrade (Bulk Pickup), the other cards dimmed.
+local function refreshSpotlight()
+	local on = attribute("TutorialStep") == table.find(GameConfig.Tutorial.Steps, "Shop")
+	for _, row in rows do
+		local spotlit = row.id == GameConfig.Tutorial.ShopUpgrade
+		row.spot.Visible = on and spotlit
+		row.shade.Visible = on and not spotlit
+	end
+end
+
 local function refreshAll()
+	refreshSpotlight()
 	for _, row in rows do
 		local level = attribute(row.id .. "Level")
 		local cost = GameConfig.upgradeCost(row.id, level + 1)
@@ -341,7 +365,41 @@ local function buildPanel(): ScreenGui
 		local button = UIStyle.button(frame, "", UIStyle.Colors.Gold, UDim2.fromOffset(130, 44), 22)
 		button.AnchorPoint = Vector2.new(1, 0.5)
 		button.Position = UDim2.new(1, -104, 0.5, 0)
-		table.insert(rows, { id = id, frame = frame, detail = detail, pips = pips, button = button, robux = robux })
+		-- The tutorial's spotlight (refreshSpotlight): a gold ring around the card, or a shade over it.
+		local spot = Instance.new("Frame")
+		spot.Name = "Spotlight"
+		spot.AnchorPoint = Vector2.new(0.5, 0.5)
+		spot.Position = UDim2.fromScale(0.5, 0.5)
+		spot.Size = UDim2.new(1, 12, 1, 12)
+		spot.BackgroundTransparency = 1
+		spot.Visible = false
+		spot.ZIndex = 10
+		spot.Parent = frame
+		UIStyle.corner(spot, 16)
+		local ring = UIStyle.stroke(spot, 5, UIStyle.GOLD, true)
+		TweenService:Create(ring, SPOT_PULSE, { Transparency = 0.7 }):Play()
+		local tag = UIStyle.text(spot, "Buy this first!", 22, UIStyle.GOLD)
+		tag.AnchorPoint = Vector2.new(0.5, 0.5)
+		tag.Position = UDim2.fromScale(0.5, 0)
+		local shade = Instance.new("Frame")
+		shade.Name = "Shade"
+		shade.Size = UDim2.fromScale(1, 1)
+		shade.BackgroundColor3 = Color3.new(0, 0, 0)
+		shade.BackgroundTransparency = 0.5
+		shade.Visible = false
+		shade.ZIndex = 10
+		shade.Parent = frame
+		UIStyle.corner(shade, 12)
+		table.insert(rows, {
+			id = id,
+			frame = frame,
+			detail = detail,
+			pips = pips,
+			button = button,
+			robux = robux,
+			spot = spot,
+			shade = shade,
+		})
 		button.Activated:Connect(function()
 			local cost = GameConfig.upgradeCost(id, attribute(id .. "Level") + 1)
 			if not cost then
@@ -373,6 +431,7 @@ end
 function ShopController.start()
 	local gui = buildPanel()
 	localPlayer:GetAttributeChangedSignal("Coins"):Connect(refreshAll)
+	localPlayer:GetAttributeChangedSignal("TutorialStep"):Connect(refreshSpotlight)
 	for _, row in rows do
 		-- nil until the save loads: the first value is the save, not a purchase, so no banner for it.
 		local last = localPlayer:GetAttribute(row.id .. "Level")

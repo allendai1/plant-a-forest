@@ -18,7 +18,7 @@ local Sounds = require(script.Parent.Parent.Sounds)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
 local WIDTH = 420 -- room for the panel, which sizes to its text and stays centered
-local HEIGHT = 86
+local HEIGHT = 100 -- 86 until 2026-10-08 (the user wanted more room above and below the key and text)
 local PULSE_SECONDS = 1.2 -- the pick-up prompt's glow: dark to its brightest, then back over the same time
 local PULSE_COLOR = Color3.fromRGB(150, 120, 70) -- its brightest (times the yellow gradient)
 local KEY_SIZE = 62
@@ -134,7 +134,7 @@ local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInpu
 		):Play()
 	end
 	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 30), UDim.new(0, 30) -- 30 px each side (were 10 and 24; the user's ask 2026-10-07)
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 42), UDim.new(0, 42) -- 42 px each side (were 10/24, then 30; the user's asks 2026-10-07 and -08)
 	pad.Parent = panel
 	UIStyle.list(panel, true, 14)
 

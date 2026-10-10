@@ -33,7 +33,7 @@ Each stage change already "pops" the new model in. New in this plan:
 | `src/client/Controllers/ForestController.luau` | **Stage change:** a new stage's model pops in from the previous model's size, not from half its own. With models this close in size, popping from half would make the tree shrink and then grow. It also gets the leaf puff and, for your own seeds, the rising note. **Full grown:** checked as "the last stage" instead of 4. |
 | `tools/build_map.luau` | **Importing:** imported `Leafy1–8` / `Pine1–8` go into `Assets.Trees`, with the bark, leaf and needle colors the current trees use. Today the import would drop them in the Lobby folder. **Islets:** the decorative trees there use the full-grown `Leafy8` / `Pine8`. |
 | `ReplicatedStorage.Assets.Trees` | the old `Leafy1–4` / `Pine1–4` are replaced by `Leafy1–8` / `Pine1–8` |
-| `CLAUDE.md`, `docs/DESIGN_CHANGES.md` | "4 model stages" becomes 8, with the stage table |
+| [CLAUDE.md](../../CLAUDE.md), [docs/DESIGN_CHANGES.md](../DESIGN_CHANGES.md) | "4 model stages" becomes 8, with the stage table |
 
 No server changes, no remotes, no saved data. The server only counts seeds; clients pick the model.
 

@@ -93,6 +93,9 @@ GameConfig.Grid = {
 	-- RingUnlockFill of the current row's trees are full grown (1.0 = every tree).
 	OutsideIn = true,
 	RingUnlockFill = 1.0,
+	-- Two rings (2026-10-09, the user's idea): a plot this many rings past the open ring opens early once the tree
+	-- just outside it is full grown, so the forest creeps on behind finished trees. 0 = only the open ring.
+	AheadRings = 1,
 	NoPlantTag = "NoPlant", -- CollectionService tag on volumes that block hexes (center-only check)
 	TreeJitterFraction = 0.25, -- max random offset from hex center, as a fraction of HexSize
 }
@@ -123,7 +126,7 @@ GameConfig.Tiers = {
 		-- only (2026-10-08, the user's call: an easier number for first-time players). The other worlds keep 200.
 		SeedsPerHex = 100, -- the most a tree takes (a full server); ForestSize scales it down for small ones
 		SeedsPerPlayer = 1500, -- the forest's seeds per player in the server (ForestSize)
-		Weight = 60, -- how often the roulette picks it (60/30/10 since the third world, the user's call)
+		Weight = 50, -- how often the roulette picks it (50/30/10 since 2026-10-08; was 60/30/10, the user's calls)
 		CoinMultiplier = 1, -- coins per seed planted
 		Commons = { "Leafy", "Pine" }, -- what the free acorns grow (Trees.Species names)
 		WorldTree = "Ancient",
@@ -202,28 +205,46 @@ GameConfig.StationPasses = {
 -- Robux items around the HUD (docs/plans/GUI.md). Prices live on the Creator Dashboard; the ones in
 -- the comments are what they were created at.
 ---------------------------------------------------------------------------
-export type BoostPass = { Multiplier: number, PassId: number }
+export type Boost = { Multiplier: number, ProductId: number, PassId: number }
 
--- Permanent passes that multiply the Strength or Speed gained from training (benches, treadmills,
--- the Ancient Spring). Only the highest one owned counts. The HUD sells the next one up.
-GameConfig.BoostPasses = {
+-- Permanent boosts that multiply the Strength or Speed gained from training (benches, treadmills,
+-- the Ancient Spring). Only the highest one counts. The HUD sells the next one up.
+-- Developer products since 2026-10-08 (the user's call: game passes only for the Forest Ranger and the
+-- training areas). A purchase is saved in the profile (StrengthBoostBought / SpeedBoostBought). PassId is
+-- the old game pass, now off sale: anyone who bought it keeps that boost (PassService).
+GameConfig.Boosts = {
 	-- 32x-128x Strength and 4x-16x Speed added 2026-10-07 (the user's tiers; new prices are defaults to adjust).
 	Strength = {
-		{ Multiplier = 2, PassId = 2013536261 }, -- 5 Robux
-		{ Multiplier = 4, PassId = 2013674263 }, -- 14
-		{ Multiplier = 8, PassId = 2014892259 }, -- 39
-		{ Multiplier = 16, PassId = 2013842259 }, -- 99
-		{ Multiplier = 32, PassId = 2016758271 }, -- 199
-		{ Multiplier = 64, PassId = 2014298454 }, -- 449
-		{ Multiplier = 128, PassId = 2016440281 }, -- 999
-	} :: { BoostPass },
+		{ Multiplier = 2, ProductId = 3717371274, PassId = 2013536261 }, -- 5 Robux
+		{ Multiplier = 4, ProductId = 3717371278, PassId = 2013674263 }, -- 14
+		{ Multiplier = 8, ProductId = 3717371279, PassId = 2014892259 }, -- 39
+		{ Multiplier = 16, ProductId = 3717371280, PassId = 2013842259 }, -- 99
+		{ Multiplier = 32, ProductId = 3717371283, PassId = 2016758271 }, -- 199
+		{ Multiplier = 64, ProductId = 3717371284, PassId = 2014298454 }, -- 449
+		{ Multiplier = 128, ProductId = 3717371287, PassId = 2016440281 }, -- 999
+	} :: { Boost },
 	Speed = {
-		{ Multiplier = 1.5, PassId = 2012936265 }, -- 3
-		{ Multiplier = 2, PassId = 2014322263 }, -- 9
-		{ Multiplier = 4, PassId = 2013782265 }, -- 39 (was the 3x Speed pass at 25; renamed so its owners got 4x)
-		{ Multiplier = 8, PassId = 2016032296 }, -- 99
-		{ Multiplier = 16, PassId = 2013458453 }, -- 249
-	} :: { BoostPass },
+		{ Multiplier = 1.5, ProductId = 3717371291, PassId = 2012936265 }, -- 3
+		{ Multiplier = 2, ProductId = 3717371293, PassId = 2014322263 }, -- 9
+		{ Multiplier = 4, ProductId = 3717371294, PassId = 2013782265 }, -- 39
+		{ Multiplier = 8, ProductId = 3717371295, PassId = 2016032296 }, -- 99
+		{ Multiplier = 16, ProductId = 3717371297, PassId = 2013458453 }, -- 249
+	} :: { Boost },
+}
+
+-- The gnome (2026-10-09, the user's call, like Build the Pyramid dressing everyone as a pyramid worker): every player
+-- is a forest gnome, the whole avatar replaced (OutfitService). The user's picks: the Gnome Cap Fitted, the Man Face
+-- (a dynamic head, its mood and brows), gnome skin and no shirt or pants; the white Chin Beard is the default from the
+-- cap's creator. Character pass outfits (the Forest Ranger) go on top, their hat in place of the cap. Catalog ids;
+-- Roblox lets a game put any catalog item on players for free. Enabled = false gives everyone their own avatar again.
+GameConfig.Gnome = {
+	Enabled = true,
+	Hat = 15349453580, -- Gnome Cap Fitted (red)
+	Beard = 15349673453, -- Chin Beard (white)
+	Head = 10725826963, -- Man Face - Head (bundle 949)
+	Mood = 10725833199, -- Man Face - Mood
+	Brows = 10725837187, -- Man Face - Brows
+	Skin = Color3.fromRGB(240, 190, 150), -- the whole body: a warm, rosy gnome skin
 }
 
 -- Hands passes (like Build the Pyramid's quick and ultra place/pickup, 2026-10-07): pick up and plant this
@@ -309,9 +330,15 @@ function GameConfig.rankFor(forests: number): Rank
 end
 
 GameConfig.Leaderboards = {
-	-- Strength, lifetime seeds planted and Speed since 2026-10-08 (the user's call; was Most Forests in the middle).
-	Stats = { "Strength", "SeedsPlanted", "Speed" },
-	Titles = { Strength = "Top Strength", SeedsPlanted = "Top Seeds", Speed = "Top Speed" },
+	-- Forests, lifetime seeds planted, Strength and Speed, in that order (the user's call, 2026-10-08; it was
+	-- Strength, Seeds, Speed earlier that day, and Most Forests in the middle before).
+	Stats = { "ForestsCompleted", "SeedsPlanted", "Strength", "Speed" },
+	Titles = {
+		ForestsCompleted = "Top Forests",
+		SeedsPlanted = "Top Seeds",
+		Strength = "Top Strength",
+		Speed = "Top Speed",
+	},
 	Size = 100, -- the top 100 players (the user's call, 2026-10-08; was 50; GetSortedAsync allows at most 100)
 	WriteSeconds = 120,
 	ReadSeconds = 120,
@@ -344,7 +371,7 @@ GameConfig.ServerBoost = { Multiplier = 2, Seconds = 900, ProductId = 3716976610
 
 -- Upgrade levels for Robux (the second button in the altar shop): ids[n] buys level n.
 -- Every level has one since 2026-10-07 (levels 6+ were added then): 9, 19, 39, 79, 149, then about 1.6x a level:
--- 239, 379, 599, 949, 1,499, 2,399, 3,799 Robux (Planting Range stops at level 10).
+-- 239, 379, 599, 949, 1,499, 2,399, 3,799 Robux (Planting Range uses its first 4 since 2026-10-09: 9, 19, 39, 79 Robux).
 GameConfig.UpgradeProducts = {
 	BulkPickup = {
 		3716976612,
@@ -374,17 +401,11 @@ GameConfig.UpgradeProducts = {
 		3717159429,
 		3717159430,
 	},
-	PlantingRange = {
+	PlantingRange = { -- 4 levels since 2026-10-09; products 5-10 (3716976641, 3717159432-39) are unused
 		3716976635,
 		3716976636,
 		3716976638,
 		3716976639,
-		3716976641,
-		3717159432,
-		3717159434,
-		3717159436,
-		3717159438,
-		3717159439,
 	},
 } :: { [string]: { number } }
 
@@ -431,9 +452,40 @@ GameConfig.Economy = {
 	AwakeningBoost = { CoinMultiplier = 2, DurationSeconds = 600 }, -- unused since M6 (left out for now)
 	BuyRate = { PerSecond = 4, Burst = 4 }, -- BuyUpgrade rate limit per player
 	FreeGiftCoins = 500, -- the free gift (like and favorite), once per player ever (M10)
-	GiftRate = { PerSecond = 1, Burst = 2 }, -- ClaimFreeGift rate limit per player
+	GiftRate = { PerSecond = 1, Burst = 2 }, -- ClaimFreeGift and ClaimGroupGift rate limit per player
+	-- The group gift (2026-10-08): join the studio's group (Forest Conservation Studios) at the FREE GIFT board by
+	-- the upgrades, once per player ever. The coins are a default the user can change.
+	GroupId = 336242048,
+	GroupGiftCoins = 500,
+	-- The first tree a player ever finishes (planting its last acorn): confetti and these coins, about two first
+	-- upgrades (2026-10-09, the user's call: most new players left before any win).
+	FirstTreeCoins = 100,
 	ShopRingSlackStuds = 4, -- latency slack on the server's "standing in the shop ring" check
 }
+
+-- The starter quests (docs/plans/Quests.md, 2026-10-09): one at a time, in order, from the end of the tutorial. Each
+-- counts one of the player's saved numbers (Stat; "UpgradeLevels" = the three upgrades' levels added up), pays Reward
+-- coins when claimed at Goal, and the next one starts. Lifetime numbers, so progress made earlier counts.
+export type Quest = { Id: string, Text: string, Stat: string, Goal: number, Reward: number }
+GameConfig.Quests = {
+	{ Id = "GrowTrees", Text = "Grow 3 trees", Stat = "TreesFinished", Goal = 3, Reward = 50 },
+	{ Id = "Strength100", Text = "Reach 100 Strength", Stat = "Strength", Goal = 100, Reward = 75 },
+	{ Id = "Speed50", Text = "Reach 50 Speed", Stat = "Speed", Goal = 50, Reward = 75 },
+	{ Id = "Plant250", Text = "Plant 250 acorns", Stat = "SeedsPlanted", Goal = 250, Reward = 100 },
+	{ Id = "Ring", Text = "Help finish a ring", Stat = "RingsHelped", Goal = 1, Reward = 150 },
+	{ Id = "Upgrades3", Text = "Buy 3 upgrades", Stat = "UpgradeLevels", Goal = 3, Reward = 150 },
+	{ Id = "Strength1000", Text = "Reach 1,000 Strength", Stat = "Strength", Goal = 1000, Reward = 200 },
+	{ Id = "Forest", Text = "Complete a forest", Stat = "ForestsCompleted", Goal = 1, Reward = 300 },
+} :: { Quest }
+GameConfig.QuestClaimRate = { PerSecond = 2, Burst = 3 } -- ClaimQuest rate limit per player
+
+-- A quest's progress from the player's numbers (`value` reads one: the profile on the server, attributes on clients).
+function GameConfig.questProgress(quest: Quest, value: (name: string) -> number): number
+	if quest.Stat == "UpgradeLevels" then
+		return value("BulkPickupLevel") + value("BulkPlantLevel") + value("PlantingRangeLevel")
+	end
+	return value(quest.Stat)
+end
 
 -- Player settings (the Settings button): SetSetting's rate limit per player.
 GameConfig.Settings = {
@@ -448,6 +500,7 @@ GameConfig.Tutorial = {
 	TrainedStrength = 20, -- the Train step ends here (carrying 3; was 10, carrying 2)
 	TrainedSpeed = 20, -- the TrainSpeed step ends here (about 5 s on the 1x treadmill)
 	ShopCoins = 50, -- the cheapest upgrade: the Shop step tops a new player's coins up to this
+	ShopUpgrade = "BulkPickup", -- the upgrade the Shop step spotlights (2026-10-09, the user's call)
 	-- In order; the step number is the index. TutorialService checks when each is done.
 	-- TrainSpeed added 2026-10-07 (the user's call): train Speed too, not only Strength. A player saved at the old
 	-- DoneStep (7) lands on Shop, which finishes at once if they own any upgrade.
@@ -460,6 +513,7 @@ GameConfig.Tutorial = {
 	RemindTrips = 4,
 	RemindSeconds = 12,
 	RemindCooldown = 300,
+	RemindMaxStrength = 200, -- no tip once Strength is over this (the user's ask, 2026-10-08)
 }
 
 -- The upgrades sold at the shop, in the order the shop lists them (M7).
@@ -476,6 +530,40 @@ GameConfig.ShopUpgrades = { "BulkPickup", "BulkPlant", "PlantingRange" }
 -- (OuterFirst, OuterFirstShare of servers) or from the hub out (InnerFirst), publishes it as ForestState Layout /
 -- OutsideIn, and every forest analytics event records it (docs/plans/TuningSignals.md). Off: every server uses
 -- Grid.OutsideIn.
+-- Rounds (2026-10-09, the user's idea, from the launch-day data: only 24 of 257 new players finished a forest). A
+-- server's first forests are smaller: forest 1 opens only the 2 rings next to the hub, forest 2 the inner 4, forest 3
+-- the inner 6, and from forest 4 every ring. Each forest still starts empty after the break, and seeds per tree are
+-- the same as a full forest's (ForestSize), so a round's target is just its trees x that. The rings outside the
+-- round are hidden (plain ground) and fade in when a round grows. On: forests always open from the hub out (the
+-- layout A/B test is ignored) and every forest analytics event says "Round N" instead of the layout.
+-- The field (2026-10-09, the user's call: a forest all around the spawn wasn't clear about where to go, unlike Build
+-- the Pyramid's one pile and one pyramid). The forest is only the half of the island across the World Tree from the
+-- town (the spawn, shop, NPCs, gift boards and leaderboards, all on the hub's +X side): plots whose angle around the
+-- hub is within HalfAngle degrees of Facing (degrees from +X). Only the acorn dispensers facing the field stay (4 of
+-- the 6), and the spawn turns to face the World Tree (ForestService.init, at runtime: the place itself is unchanged).
+-- Enabled = false brings back the forest all around, with all six dispensers.
+GameConfig.Field = {
+	Enabled = true,
+	Facing = 180,
+	HalfAngle = 90,
+}
+
+-- Is a point at this angle around the hub (degrees from +X) in the field?
+function GameConfig.inField(angle: number): boolean
+	local field = GameConfig.Field
+	return not field.Enabled or math.abs((angle - field.Facing + 180) % 360 - 180) <= field.HalfAngle + 1e-6
+end
+
+GameConfig.Rounds = {
+	Enabled = true,
+	-- The rings of the server's forest 1, 2 (in opening order); after the list, all of them. { 3, 6 } since the forest
+	-- became a half (GameConfig.Field: 63 trees, then 153, then 270); it was { 2, 4, 6 } around the whole hub.
+	Rings = { 3, 6 },
+	-- In those small rounds every ring is open at once (2026-10-09, the user's playtest: the new outer rings faded in
+	-- but stayed shut until the inner ones were full again). Full-size forests keep opening ring by ring.
+	OpenWholeRound = true,
+}
+
 GameConfig.Experiments = {
 	LayoutTest = true,
 	-- 1 = every server outer-first (2026-10-08, the user's call: too few players to split yet; was 0.8). Lower it
@@ -488,6 +576,9 @@ GameConfig.Features = {
 	-- The Lord of the Forest character (the NPC, its stand and shop card; the pass is off sale on Roblox too). Saved
 	-- for a later update (2026-10-07). To release: set true, rerun nothing, and put pass 2014682392 back on sale.
 	LordOfTheForest = false,
+	-- The tutorial's story intro (the camera sweep over the island to the World Tree; switched off 2026-10-09, the
+	-- user's call). Off: a new player loads at the first tutorial step (TutorialStep 1) instead of 0.
+	TutorialIntro = false,
 }
 
 -- The character passes on show and for sale (HandsPasses whose Feature flag isn't off).
@@ -608,6 +699,16 @@ GameConfig.Awakening = {
 	-- 43 since 2026-10-08 (was 72): the World Tree and its rune circle are drawn at 60% to fit the training
 	-- pads in the garden around it (AncientTreeController FINAL_SCALE); the pads start 54 studs out.
 	SpringRadiusStuds = 43,
+	-- Up the tree (2026-10-09, the user's idea, like Build the Pyramid's well inside the finished pyramid): the
+	-- Spring is a round platform SpringRadiusStuds wide this high up in the World Tree's canopy, reached by a wooden
+	-- ramp spiraling around the trunk (TreeClimbService). Both are there only during the break. 0 = the Spring on the
+	-- ground around the trunk again, with no climb. 110: just under Sherwood's canopy (about 121 up), inside the
+	-- maple's and the cherry blossom's.
+	SpringHeightStuds = 110,
+	-- The ramp: its middle this far from the trunk (outside the platform), this wide, rising this much per stud
+	-- walked (0.28: about 390 studs of ramp, 1.3 turns; ~25 s at a new player's walk speed), starting at this angle
+	-- (radians from the hub's +X side, toward the spawn) and winding clockwise seen from above.
+	Climb = { Radius = 49, Width = 10, Slope = 0.28, StartAngle = 0 },
 	-- Rolled once per break for the whole server; Weight is out of the total of all weights.
 	SpringOdds = {
 		{ Multiplier = 2, Weight = 75 },
@@ -666,12 +767,14 @@ GameConfig.Upgrades = {
 		MaxLevel = 5,
 		ValuePerLevel = { 1, 1.15, 1.3, 1.45, 1.6, 1.75 },
 	},
-	PlantingRange = { -- extra studs of targeting range (+4 per level)
+	-- Extra studs of targeting range: each level reaches one more tree (trees are ~27.7 studs apart; the base 30
+	-- reaches the next tree). 4 big levels since 2026-10-09 (the user's call: 10 levels of +4 studs were hardly felt).
+	PlantingRange = {
 		DisplayName = "Planting Range",
-		BaseCost = 60,
-		Growth = 2.5,
-		MaxLevel = 10,
-		ValuePerLevel = { 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40 },
+		BaseCost = 300,
+		Growth = 8, -- 300, 2,400, 19,200, 153,600 coins
+		MaxLevel = 4,
+		ValuePerLevel = { 0, 28, 56, 84, 112 },
 	},
 } :: { [string]: UpgradeDef }
 
@@ -776,7 +879,7 @@ end
 -- for new players). It stays fixed while that forest grows. Off: always the world's SeedsPerHex.
 GameConfig.ForestSize = {
 	ScaleWithPlayers = true,
-	MinSeedsPerHex = 5, -- a solo forest: 540 trees x 5 = 2,700 seeds
+	MinSeedsPerHex = 3, -- a solo forest: 540 trees x 3 = 1,620 seeds (5 until 2026-10-09: alone, players left long before the first ring was done)
 }
 
 -- Seeds per tree for a forest of `plots` trees in world `tier` with `players` in the server.
@@ -787,6 +890,12 @@ function GameConfig.seedsPerHexFor(tier: TierDef, players: number, plots: number
 	end
 	local wanted = math.ceil(players * tier.SeedsPerPlayer / plots)
 	return math.clamp(wanted, size.MinSeedsPerHex, tier.SeedsPerHex)
+end
+
+-- Where the climb up the World Tree starts, on the ground (Awakening.Climb): for the first-break guide's arrow.
+function GameConfig.climbStart(center: Vector3): Vector3
+	local climb = GameConfig.Awakening.Climb
+	return center + Vector3.new(math.cos(climb.StartAngle), 0, math.sin(climb.StartAngle)) * climb.Radius
 end
 
 function GameConfig.forestTarget(plantableHexes: number, seedsPerHex: number): number
