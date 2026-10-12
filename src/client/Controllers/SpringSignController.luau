@@ -28,7 +28,7 @@ local SpringSignController = {}
 
 function SpringSignController.start()
 	local forestState = ReplicatedStorage:WaitForChild("ForestState")
-	local center = forestState:GetAttribute("Center")
+	local center = forestState:GetAttribute("SpringCenter") or forestState:GetAttribute("Center") -- on the far rim
 	local anchor = Instance.new("Part")
 	anchor.Name = "SpringSignAnchor"
 	anchor.Size = Vector3.one

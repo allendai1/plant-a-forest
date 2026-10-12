@@ -1,6 +1,6 @@
 --!strict
 -- TreeCounterController: the hub's counter of every tree grown in every server (2026-10-09). Each part tagged
--- TreeCounterBoard gets a SurfaceGui on its front face: "TREES GROWN", the total (ReplicatedStorage attribute
+-- TreeCounterBoard gets a SurfaceGui on its front face: "SECTIONS BUILT", the total (ReplicatedStorage attribute
 -- TreesGrown, from TreeCounterService) counting up smoothly to each new value, and your own trees (the
 -- TreesFinished attribute: trees you planted the last acorn of).
 
@@ -50,10 +50,10 @@ local function draw(board: BasePart)
 	title.Parent = column
 	UIStyle.list(title, true, 12, Enum.HorizontalAlignment.Center).VerticalAlignment = Enum.VerticalAlignment.Center
 	UIStyle.icon(title, UIStyle.Icons.Forests, 64)
-	UIStyle.text(title, "TREES GROWN", 58, UIStyle.GOLD).LayoutOrder = 2
+	UIStyle.text(title, "SECTIONS BUILT", 58, UIStyle.GOLD).LayoutOrder = 2
 	local total = UIStyle.text(column, "0", 110)
 	total.LayoutOrder = 2
-	local by = UIStyle.text(column, "by everyone playing Plant Trees!", 28, UIStyle.GREY)
+	local by = UIStyle.text(column, "by everyone building across the canyon!", 28, UIStyle.GREY)
 	by.LayoutOrder = 3
 	local mine = UIStyle.text(column, "", 34, UIStyle.GOLD)
 	mine.LayoutOrder = 4

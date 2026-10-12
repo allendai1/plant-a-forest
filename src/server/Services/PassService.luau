@@ -5,7 +5,9 @@
 -- Station passes unlock one training tier. Boosts (GameConfig.Boosts) multiply Strength or Speed gains: the
 -- highest of the one bought as a developer product (saved, DataService's <stat>BoostBought) and any old boost
 -- game pass the player owns is published as the StrengthBoost / SpeedBoost attribute (1 = none).
--- Hands passes (GameConfig.HandsPasses) speed up picking up and planting: HandsSpeed attribute (1 = none).
+-- Hands passes (GameConfig.HandsPasses) speed up picking up and planting: HandsSpeed attribute (1 = none). A character
+-- bought with coins (saved CharacterBought, EconomyService) counts the same as owning its pass.
+-- The Auto Build pass (GameConfig.AutoBuild) is published as the AutoBuild attribute (true/false).
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -36,6 +38,7 @@ local function allPassIds(): { number }
 	for _, step in GameConfig.HandsPasses do
 		table.insert(ids, step.PassId)
 	end
+	table.insert(ids, GameConfig.AutoBuild.PassId)
 	return ids
 end
 
@@ -51,14 +54,35 @@ function PassService.boost(player: Player, stat: BoostStat): number
 	return best
 end
 
--- How many times faster than the base pace this player picks up and plants (1 = no Hands pass). A character switched
--- off by its feature flag counts for nothing, so its owners get neither its speed nor its outfit (OutfitService).
-function PassService.handsSpeed(player: Player): number
+-- Does the player have the character GameConfig.HandsPasses[index], by its pass or bought with coins? A character
+-- switched off by its feature flag counts for nothing, so its owners get neither its perks nor its outfit.
+function PassService.ownsCharacter(player: Player, index: number): boolean
+	local step = GameConfig.HandsPasses[index]
+	if not step or not table.find(GameConfig.availableHandsPasses(), step) then
+		return false
+	end
 	local mine = owned[player]
+	local profile = DataService.get(player)
+	return (mine ~= nil and mine[step.PassId] == true) or (profile ~= nil and profile.CharacterBought >= index)
+end
+
+-- How many times faster than the base pace this player picks up and plants (1 = no character).
+function PassService.handsSpeed(player: Player): number
 	local best = 1
-	for _, step in GameConfig.availableHandsPasses() do
-		if mine and mine[step.PassId] then
+	for index, step in GameConfig.HandsPasses do
+		if PassService.ownsCharacter(player, index) then
 			best = math.max(best, step.Multiplier)
+		end
+	end
+	return best
+end
+
+-- How many bridges each finished bridge counts for this player (GameConfig.HandsPasses BridgeMultiplier; 1 = none).
+function PassService.bridgeMultiplier(player: Player): number
+	local best = 1
+	for index, step in GameConfig.HandsPasses do
+		if PassService.ownsCharacter(player, index) and step.BridgeMultiplier then
+			best = math.max(best, step.BridgeMultiplier)
 		end
 	end
 	return best
@@ -68,6 +92,8 @@ local function publish(player: Player)
 	player:SetAttribute("StrengthBoost", PassService.boost(player, "Strength"))
 	player:SetAttribute("SpeedBoost", PassService.boost(player, "Speed"))
 	player:SetAttribute("HandsSpeed", PassService.handsSpeed(player))
+	local mine = owned[player]
+	player:SetAttribute("AutoBuild", mine ~= nil and mine[GameConfig.AutoBuild.PassId] == true)
 end
 
 local function grantId(player: Player, passId: number)
@@ -100,9 +126,9 @@ end
 local function onPlayerAdded(player: Player)
 	owned[player] = {}
 	publish(player)
-	-- The saved boosts arrive when the profile loads (and change on a purchase): publish again.
-	for _, stat in { "Strength", "Speed" } do
-		player:GetAttributeChangedSignal(`{stat}BoostBought`):Connect(function()
+	-- The saved boosts and coin-bought characters arrive when the profile loads (and change on a purchase): publish again.
+	for _, key in { "StrengthBoostBought", "SpeedBoostBought", "CharacterBought" } do
+		player:GetAttributeChangedSignal(key):Connect(function()
 			if owned[player] then
 				publish(player)
 			end
@@ -153,6 +179,19 @@ function PassService.grantBoost(player: Player, stat: BoostStat, multiplier: num
 	end
 	DataService.set(player, `{stat}BoostBought` :: DataService.StatKey, math.max(1, multiplier))
 	publish(player)
+end
+
+-- Studio-only testing (DevService): Auto Build on (1) or off (0) for this session (your own account owns every pass).
+function PassService.grantAuto(player: Player, on: boolean)
+	local mine = owned[player]
+	if mine then
+		if on then
+			mine[GameConfig.AutoBuild.PassId] = true
+		else
+			mine[GameConfig.AutoBuild.PassId] = nil
+		end
+		publish(player)
+	end
 end
 
 -- Studio-only testing (DevService): pretend the player owns this Hands pass; 1 takes them away.

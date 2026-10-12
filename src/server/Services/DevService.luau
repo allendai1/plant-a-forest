@@ -10,6 +10,7 @@ local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local CarryService = require(script.Parent.CarryService)
 local DataService = require(script.Parent.DataService)
 local ForestService = require(script.Parent.ForestService)
+local MapService = require(script.Parent.MapService)
 local AwakeningService = require(script.Parent.AwakeningService)
 local PassService = require(script.Parent.PassService)
 local ProductService = require(script.Parent.ProductService)
@@ -24,10 +25,16 @@ local STATS: { [string]: DataService.StatKey } = {
 	setBulkPickupLevel = "BulkPickupLevel",
 	setBulkPlantLevel = "BulkPlantLevel",
 	setPlantingRangeLevel = "PlantingRangeLevel",
+	setLuckyPlanksLevel = "LuckyPlanksLevel",
 	setTutorialStep = "TutorialStep", -- 8 = done (GameConfig.Tutorial.DoneStep)
 	setFirstTreeDone = "FirstTreeDone", -- 0: your next finished tree is your "first" again
 	setSpringGuideSeen = "SpringGuideSeen", -- 0: the first-break guide shows again
 	setQuestIndex = "QuestIndex", -- the starter quest you're on (1-8; 9 = all done)
+	setDailyStreak = "DailyStreak", -- the daily reward's streak
+	setDailyLastDay = "DailyLastDay", -- the UTC day it was last claimed (GameConfig.dayOf)
+	setDailyGym = "DailyGym", -- the gym a daily reward unlocked (0 = none)
+	setFreeGiftClaimed = "FreeGiftClaimed", -- 0: the free gift can be claimed again
+	setCharacterBought = "CharacterBought", -- characters bought with coins (a HandsPasses index; 0 = none)
 }
 
 local UPGRADE_BUYS: { [string]: string } = {
@@ -105,6 +112,9 @@ local function run(player: Player, command: string, value: number): boolean
 	elseif command == "grantHands" then -- value = 2 or 5 (the passes' multipliers); 1 takes them away
 		PassService.grantHands(player, value)
 		return true
+	elseif command == "grantAuto" then -- 1 = Auto Build on, 0 = off (this session)
+		PassService.grantAuto(player, value == 1)
+		return true
 	elseif command == "grantStrengthBoost" or command == "grantSpeedBoost" then -- value 1 takes them away
 		PassService.grantBoost(player, if command == "grantStrengthBoost" then "Strength" else "Speed", value)
 		return true
@@ -125,6 +135,7 @@ local function run(player: Player, command: string, value: number): boolean
 		return fakeBuy(player, GameConfig.SeedShop.Seeds[value].ProductId)
 	elseif command == "setTier" and GameConfig.Tiers[value] then -- start a fresh forest in this world
 		AwakeningService.stop() -- a break still running would keep the last forest's spring multiplier
+		MapService.show(GameConfig.Tiers[value].Map, GameConfig.Tiers[value].Name)
 		ForestService.setTier(value)
 		ForestService.reset()
 		return true

@@ -1,8 +1,8 @@
 --!strict
 -- NameplateController: the rank over every player's head (2026-10-07). Each character gets a nameplate: their
 -- forest count inside the forest icon on top (like Build the Pyramid's pyramid badge, 2026-10-07), their rank
--- (GameConfig.Ranks by their ForestsCompleted attribute, in the rank's color) and their name underneath, in the
--- HUD's outlined text. It replaces Roblox's own name tag (hidden on this client). Everyone, yourself
+-- (GameConfig.Ranks by their ForestsCompleted attribute, in the rank's color) and their name underneath in white, in
+-- the HUD's outlined text with a bolder shadow (boldShadow). It replaces Roblox's own name tag (hidden on this client). Everyone, yourself
 -- included, sees everyone's. Reaching a new rank yourself plays a "Rank up!" banner and the level-up sound.
 
 local Players = game:GetService("Players")
@@ -20,6 +20,11 @@ local PLATE_STUDS = 7.5 -- the plate's width in the world: about its old size at
 local DESIGN = Vector2.new(320, 120) -- the layout's size in pixels before it's scaled to the plate
 local MAX_DISTANCE = 200 -- nameplates farther away than this aren't drawn (past the 150-stud max zoom, so yours stays)
 local RAINBOW_SPEED = 0.25 -- turns per second of the top rank's rainbow
+-- Makes up for the map's darker exposure, so the name reads white: measured on screen, 1 gave (223, 218, 211), 1.6
+-- gives (244, 237, 231) (the rest is the warm grade); 3 is pure white but the map's bloom makes it glow.
+local PLATE_BRIGHTNESS = 1.6
+local NAME_FONT = Enum.Font.GothamBold
+local NAME_OUTLINE = 1.5 -- pixels (of the DESIGN layout); the HUD's text at this size has 2.1
 
 local NameplateController = {}
 
@@ -30,6 +35,18 @@ local rainbows: { UIGradient } = {}
 local function forestsOf(player: Player): number
 	local value = player:GetAttribute("ForestsCompleted")
 	return if typeof(value) == "number" then value else 0
+end
+
+-- Build the Pyramid's nameplate shadow (2026-10-11, the user's close-up): a solid black copy of the outlined text,
+-- not the HUD's lighter shadow of just the letters (which smeared into the outline on a small plate).
+local function boldShadow(label: TextLabel)
+	local shadow = label:FindFirstChild("Shadow")
+	local face = label:FindFirstChild("Face")
+	local outline = face and face:FindFirstChildOfClass("UIStroke")
+	if shadow and shadow:IsA("TextLabel") and outline then
+		shadow.TextTransparency = 0
+		outline:Clone().Parent = shadow
+	end
 end
 
 local function build(player: Player, head: BasePart): BillboardGui
@@ -44,6 +61,8 @@ local function build(player: Player, head: BasePart): BillboardGui
 	gui.MaxDistance = MAX_DISTANCE
 	gui.ResetOnSpawn = false
 	gui.LightInfluence = 0
+	-- The map's exposure (Lighting -0.25) and warm grade dim world GUIs: white came out grey (2026-10-11, the user).
+	gui.Brightness = PLATE_BRIGHTNESS
 	local content = Instance.new("Frame")
 	content.Name = "Content"
 	content.BackgroundTransparency = 1
@@ -70,6 +89,16 @@ local function build(player: Player, head: BasePart): BillboardGui
 	rank.Size = UDim2.new(1, 0, 0, 34)
 	rank.Position = UDim2.fromOffset(0, ICON + 2)
 	local name = UIStyle.text(content, player.DisplayName, 30, UIStyle.WHITE)
+	-- The name is lighter than the HUD's text (2026-10-11, the user, after Build the Pyramid's): GothamBold and a thin
+	-- outline; in GothamBlack with the HUD's outline it looked too thick.
+	name.Font = NAME_FONT
+	local face = name:FindFirstChild("Face")
+	local outline = face and face:FindFirstChildOfClass("UIStroke")
+	if outline then
+		outline.Thickness = NAME_OUTLINE
+	end
+	boldShadow(rank)
+	boldShadow(name)
 	name.Name = "PlayerName"
 	name.AutomaticSize = Enum.AutomaticSize.None
 	name.Size = UDim2.new(1, 0, 0, 32)
@@ -111,15 +140,17 @@ local function refresh(player: Player)
 	end
 end
 
-local function attach(player: Player, character: Model)
+-- `head`: the new head when one was just added (the old one can still be in the character for a moment, and finding
+-- "Head" then picked the old one, which was then removed: the nameplate vanished, 2026-10-11, the user's report).
+local function attach(player: Player, character: Model, head: BasePart?)
 	local old = plates[player]
 	if old then
 		old:Destroy()
 		plates[player] = nil
 	end
 	local humanoid = character:WaitForChild("Humanoid", 10)
-	local head = character:WaitForChild("Head", 10)
-	if not (humanoid and humanoid:IsA("Humanoid") and head and head:IsA("BasePart")) then
+	head = head or character:WaitForChild("Head", 10) :: BasePart?
+	if not (humanoid and humanoid:IsA("Humanoid") and head and head:IsA("BasePart") and head.Parent == character) then
 		return
 	end
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None -- our nameplate replaces it
@@ -132,8 +163,8 @@ local function watch(player: Player)
 		attach(player, character)
 		-- A new head (the gnome look swaps it right after spawning, OutfitService; streaming can too): attach again.
 		character.ChildAdded:Connect(function(child)
-			if child.Name == "Head" then
-				attach(player, character)
+			if child.Name == "Head" and child:IsA("BasePart") then
+				attach(player, character, child)
 			end
 		end)
 	end
@@ -151,7 +182,7 @@ local function watch(player: Player)
 		refresh(player)
 		local rank = GameConfig.rankFor(forestsOf(player))
 		if player == localPlayer and loaded and rank.Name ~= lastRank then
-			HUD.banner(`Rank up! You're now a {rank.Name}!`, rank.Color)
+			HUD.banner(`Rank up! You're now a{if string.find(rank.Name, "^[AEIOU]") then "n" else ""} {rank.Name}!`, rank.Color)
 			Sounds.play("LevelUp")
 		end
 		lastRank = rank.Name
@@ -170,6 +201,21 @@ function NameplateController.start()
 			gui:Destroy()
 		end
 		plates[player] = nil
+	end)
+	-- A safety net: a plate whose head left the character (swapped or removed) attaches again to the current one.
+	task.spawn(function()
+		while true do
+			task.wait(0.5)
+			for _, player in Players:GetPlayers() do
+				local character = player.Character
+				local gui = plates[player]
+				local adornee = gui and gui.Adornee
+				local head = character and character:FindFirstChild("Head")
+				if character and head and head:IsA("BasePart") and not (adornee and adornee:IsDescendantOf(character)) then
+					attach(player, character, head)
+				end
+			end
+		end
 	end)
 	RunService.Heartbeat:Connect(function()
 		local turn = (os.clock() * RAINBOW_SPEED % 1) * 2 - 1

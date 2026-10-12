@@ -10,6 +10,9 @@
 -- Roblox's own purchase prompts do the buying; the server grants (ProductService, PassService). A purchase
 -- flashes its card with the purchase sound. The NPCs' prompts by the altar (a PassId attribute) also open
 -- their pass's purchase prompt from here. The upgrades for coins stay at the altar (ShopController).
+-- The characters can also be bought with coins (2026-10-11, the user's call): a coin button on each card and the NPCs'
+-- second prompt (a CoinCharacter attribute) ask the server (BuyCharacter, EconomyService), after a check here that
+-- explains a buy that can't go through (not enough coins, the character before it first).
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -24,6 +27,8 @@ local UIStyle = require(script.Parent.Parent.UIStyle)
 
 local REFRESH_SECONDS = 0.5
 local WIDTH = 680
+local DESKTOP_WIDTH = 960 -- computers: wide, like the reference game's shop (2026-10-11, the user; was 680)
+local DESKTOP_HEIGHT = 600 -- a little shorter than phones' 640 so the wide window still fits under the top bar
 local TABS = { "Boosts", "Characters", "Stations" }
 local PREVIEW_TURN = 0.6 -- radians per second
 local STATION_CARD = 190 -- a station card's height: tall enough that two rows fill the page (was 118, 2026-10-08)
@@ -47,6 +52,36 @@ local function refreshAll()
 	for _, refresh in refreshers do
 		refresh()
 	end
+end
+
+local function banner(text: string, color: Color3?)
+	local HUD = require(script.Parent.HUD) :: any -- required here: HUD requires the shop
+	HUD.banner(text, color)
+end
+
+-- Why the character GameConfig.HandsPasses[index] can't be bought with coins right now, or nil if it can.
+local function coinBlocker(index: number): string?
+	local pass = GameConfig.HandsPasses[index]
+	local speed = attribute(localPlayer, "HandsSpeed")
+	if not (pass and pass.CoinPrice) then
+		return "Not for sale with coins"
+	elseif speed >= pass.Multiplier then
+		return `You already have {pass.Name}`
+	elseif index > 1 and speed < GameConfig.HandsPasses[index - 1].Multiplier then
+		return `Get {GameConfig.HandsPasses[index - 1].Name} first`
+	end
+	local missing = pass.CoinPrice - attribute(localPlayer, "Coins")
+	return if missing > 0 then `{UIStyle.commas(missing)} more coins needed` else nil
+end
+
+local function buyWithCoins(index: number)
+	local blocker = coinBlocker(index)
+	if blocker then
+		banner(blocker, Color3.fromRGB(255, 120, 100))
+		Sounds.play("Error")
+		return
+	end
+	Remotes.event("BuyCharacter"):FireServer(index)
 end
 
 local function header(parent: Instance, order: number, text: string)
@@ -76,11 +111,42 @@ local function ribbon(card: GuiObject, text: string, colors: { Color3 })
 	pad.Parent = tag
 end
 
+-- The Auto Build pass (GameConfig.AutoBuild, 2026-10-11): picks up and places for you. Under the server boost.
+local function autoBuildCard(list: Instance)
+	local passId = GameConfig.AutoBuild.PassId
+	local frame = UIStyle.card(list, 104)
+	frame.LayoutOrder = 1
+	cardOf[passId] = frame
+	local art = UIStyle.icon(frame, UIStyle.Icons.AutoBuild, 64)
+	art.Position = UDim2.fromOffset(14, 20)
+	local title = UIStyle.text(frame, "Auto Build", 32)
+	title.Position = UDim2.fromOffset(90, 14)
+	local detail = UIStyle.text(frame, "Picks up and places planks for you", 19, UIStyle.GREY)
+	detail.Position = UDim2.fromOffset(90, 56)
+	local pitch = UIStyle.text(frame, "Just walk them out to the bridge!", 16, Color3.fromRGB(200, 255, 200))
+	pitch.Position = UDim2.fromOffset(90, 80)
+	local buy = buyButton(frame, UIStyle.Colors.Green)
+	buy.Activated:Connect(function()
+		if localPlayer:GetAttribute("AutoBuild") ~= true then
+			MarketplaceService:PromptGamePassPurchase(localPlayer, passId)
+		end
+	end)
+	table.insert(refreshers, function()
+		if localPlayer:GetAttribute("AutoBuild") == true then
+			buy.Text = "Owned"
+			UIStyle.recolor(buy, UIStyle.Colors.Grey)
+		else
+			buy.Text = UIStyle.priceText(passId, Enum.InfoType.GamePass, refreshAll)
+			UIStyle.recolor(buy, UIStyle.Colors.Green)
+		end
+	end)
+end
+
 local function serverBoostCard(list: Instance)
 	local boost = GameConfig.ServerBoost
 	local forestState = ReplicatedStorage:WaitForChild("ForestState")
 	local frame = UIStyle.card(list, 104)
-	frame.LayoutOrder = 1
+	frame.LayoutOrder = 0
 	local shine = frame:FindFirstChildOfClass("UIGradient")
 	if shine then -- the cards' center glow, in purple
 		shine.Color = ColorSequence.new({
@@ -205,8 +271,25 @@ local function characterPreview(parent: Instance, outfit: string, size: UDim2): 
 	return frame
 end
 
+-- A dropShadow label that stays inside its box: no automatic width, and the text scales down to fit, up to `maxSize`
+-- (2026-10-11: the characters' names and perks ran past their cards' borders).
+local function fitText(label: TextLabel, size: UDim2, maxSize: number)
+	label.AutomaticSize = Enum.AutomaticSize.None
+	label.Size = size
+	label.TextScaled = true
+	label.TextWrapped = true
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	for _, l in { label :: Instance?, label:FindFirstChild("Face"), label:FindFirstChild("Shadow") } do
+		if l then
+			local limit = Instance.new("UITextSizeConstraint")
+			limit.MaxTextSize = maxSize
+			limit.Parent = l
+		end
+	end
+end
+
 local function characterCards(list: Instance)
-	local pitch = UIStyle.text(list, "Pick up and plant faster, and wear the outfit!", 22, UIStyle.GREY)
+	local pitch = UIStyle.text(list, "Pick up and build faster, and wear the outfit!", 22, UIStyle.GREY)
 	pitch.LayoutOrder = 1
 	local row = Instance.new("Frame")
 	row.LayoutOrder = 2
@@ -226,43 +309,60 @@ local function characterCards(list: Instance)
 		end
 		local preview = characterPreview(card, pass.Outfit, UDim2.new(1, -20, 0, 190))
 		preview.Position = UDim2.fromOffset(10, 6)
-		local icon = UIStyle.icon(card, if pass.Outfit == "Lord" then UIStyle.Icons.Lord else UIStyle.Icons.Ranger, 40)
-		icon.Position = UDim2.fromOffset(12, 196)
-		local name = UIStyle.text(
-			card,
-			pass.Name,
-			if #pass.Name > 14 then 22 else 28,
-			if i == 1 then Color3.fromRGB(240, 210, 140) else Color3.fromRGB(150, 255, 150)
-		)
-		name.Position = UDim2.fromOffset(58, 200)
+		-- No icon by the name (the user's call, 2026-10-11: the Ranger and Lord icons were left from the forest game).
+		local name =
+			UIStyle.text(card, pass.Name, 28, if i == 1 then Color3.fromRGB(240, 210, 140) else Color3.fromRGB(150, 255, 150))
+		name.Position = UDim2.fromOffset(14, 198)
+		fitText(name, UDim2.new(1, -28, 0, 32), 28)
 		local perk = UIStyle.text(card, pass.Pitch, 17, UIStyle.WHITE)
-		perk.Position = UDim2.fromOffset(14, 240)
+		perk.Position = UDim2.fromOffset(14, 234)
+		fitText(perk, UDim2.new(1, -28, 0, 40), 18)
+		perk.TextYAlignment = Enum.TextYAlignment.Top
+		-- Robux on the left, coins on the right; once owned, one wide "Wearing" / "Owned" button.
 		local buy = UIStyle.button(card, "", UIStyle.Colors.Green, UDim2.new(1, -24, 0, 44), 26)
-		buy.AnchorPoint = Vector2.new(0.5, 1)
-		buy.Position = UDim2.new(0.5, 0, 1, -10)
+		buy.AnchorPoint = Vector2.new(0, 1)
+		buy.Position = UDim2.new(0, 12, 1, -10)
 		buy.Activated:Connect(function()
 			if attribute(localPlayer, "HandsSpeed") < pass.Multiplier then
 				MarketplaceService:PromptGamePassPurchase(localPlayer, pass.PassId)
 			end
 		end)
+		local index = table.find(GameConfig.HandsPasses, pass) :: number
+		local coins = UIStyle.button(card, "", UIStyle.Colors.Gold, UDim2.new(0.5, -18, 0, 44), 22)
+		coins.AnchorPoint = Vector2.new(1, 1)
+		coins.Position = UDim2.new(1, -12, 1, -10)
+		coins.Visible = pass.CoinPrice ~= nil
+		coins.Activated:Connect(function()
+			buyWithCoins(index)
+		end)
 		table.insert(refreshers, function()
 			local speed = attribute(localPlayer, "HandsSpeed")
+			local owned = speed >= pass.Multiplier
+			coins.Visible = pass.CoinPrice ~= nil and not owned
+			buy.Size = if coins.Visible then UDim2.new(0.5, -18, 0, 44) else UDim2.new(1, -24, 0, 44)
 			if speed == pass.Multiplier then
 				buy.Text = "Wearing"
 				UIStyle.recolor(buy, UIStyle.Colors.Teal)
-			elseif speed > pass.Multiplier then
+			elseif owned then
 				buy.Text = "Owned"
 				UIStyle.recolor(buy, UIStyle.Colors.Grey)
 			else
 				buy.Text = UIStyle.priceText(pass.PassId, Enum.InfoType.GamePass, refreshAll)
 				UIStyle.recolor(buy, UIStyle.Colors.Green)
 			end
+			local price = pass.CoinPrice
+			if coins.Visible and price then
+				-- The price (grey until they can buy it), or what comes first.
+				local blocker = coinBlocker(index)
+				coins.Text = if blocker and string.find(blocker, "first$") then blocker else `{UIStyle.short(price)} coins`
+				UIStyle.recolor(coins, if blocker then UIStyle.Colors.Grey else UIStyle.Colors.Gold)
+			end
 		end)
 	end
 end
 
 local function stationCards(list: Instance)
-	local pitch = UIStyle.text(list, "Unlock a training tier now, without waiting for forests.", 24, UIStyle.GREY)
+	local pitch = UIStyle.text(list, "Unlock a training tier now, without waiting for bridges.", 24, UIStyle.GREY)
 	pitch.LayoutOrder = 1
 	local grid = Instance.new("Frame")
 	grid.LayoutOrder = 2
@@ -287,7 +387,7 @@ local function stationCards(list: Instance)
 			title.AnchorPoint = Vector2.new(0.5, 0)
 			title.Position = UDim2.new(0.5, 0, 0, 8)
 			local free =
-				UIStyle.text(frame, `or {step.ForestsDone} forest{if step.ForestsDone == 1 then "" else "s"}`, 22, UIStyle.GREY)
+				UIStyle.text(frame, `or {step.ForestsDone} bridge{if step.ForestsDone == 1 then "" else "s"}`, 22, UIStyle.GREY)
 			free.AnchorPoint = Vector2.new(0.5, 0)
 			free.Position = UDim2.new(0.5, 0, 0, 62)
 			local buy = UIStyle.button(frame, "", UIStyle.Colors.Green, UDim2.new(1, -20, 0, 70), 30)
@@ -344,7 +444,7 @@ local function build(): ScreenGui
 	local holder = Instance.new("Frame")
 	holder.AnchorPoint = Vector2.new(0.5, 0.5)
 	holder.Position = UDim2.fromScale(0.5, 0.5)
-	holder.Size = UDim2.fromOffset(WIDTH, if UIStyle.isTouch() then 580 else 640) -- phones are short; pages scroll
+	holder.Size = if UIStyle.isTouch() then UDim2.fromOffset(WIDTH, 580) else UDim2.fromOffset(DESKTOP_WIDTH, DESKTOP_HEIGHT) -- pages scroll
 	holder.BackgroundTransparency = 1
 	holder.Parent = screen
 	if UIStyle.isTouch() then
@@ -360,7 +460,7 @@ local function build(): ScreenGui
 		screen:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
 		update()
 	else
-		UIStyle.autoScale(holder)
+		UIStyle.windowScale(holder) -- like every window: big, but kept under the top bar
 	end
 	local panel = UIStyle.panel(holder)
 	panel.Size = UDim2.fromScale(1, 1)
@@ -396,6 +496,7 @@ local function build(): ScreenGui
 	end
 
 	serverBoostCard(pages.Boosts)
+	autoBuildCard(pages.Boosts)
 	header(pages.Boosts, 2, "Training Boosts")
 	boostCard(
 		pages.Boosts,
@@ -488,13 +589,30 @@ function RobuxShopController.start()
 	-- The Forest Ranger and Lord of the Forest NPCs by the altar sell their pass.
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		local passId = prompt:GetAttribute("PassId")
-		if player == localPlayer and typeof(passId) == "number" then
+		local coinCharacter = prompt:GetAttribute("CoinCharacter")
+		if player ~= localPlayer then
+			return
+		elseif typeof(passId) == "number" then
 			MarketplaceService:PromptGamePassPurchase(localPlayer, passId)
+		elseif typeof(coinCharacter) == "number" then
+			buyWithCoins(coinCharacter)
 		end
 	end)
-	for _, name in { "StrengthBoost", "SpeedBoost", "HandsSpeed", "ForestsCompleted" } do
+	for _, name in { "StrengthBoost", "SpeedBoost", "HandsSpeed", "ForestsCompleted", "AutoBuild" } do
 		localPlayer:GetAttributeChangedSignal(name):Connect(refreshAll)
 	end
+	-- A character bought with coins: the purchase sound, its card flashes and a banner.
+	local bought = localPlayer:GetAttribute("CharacterBought") -- nil until the save loads: that first value isn't a buy
+	localPlayer:GetAttributeChangedSignal("CharacterBought"):Connect(function()
+		local now = attribute(localPlayer, "CharacterBought")
+		local pass = GameConfig.HandsPasses[now]
+		if typeof(bought) == "number" and now > bought and pass then
+			purchased(pass.PassId)
+			banner(`{pass.Name} unlocked!`, Color3.fromRGB(150, 255, 150))
+		end
+		bought = now
+		refreshAll()
+	end)
 	while true do
 		task.wait(REFRESH_SECONDS)
 		if gui and gui.Enabled then

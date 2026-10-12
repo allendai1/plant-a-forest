@@ -5,7 +5,7 @@
 
 local Players = game:GetService("Players")
 
-local FALL_Y = -50
+local FALL_Y = -200 -- -50 until the deep canyon (2026-10-10): a fall off the bridge lasts a moment now
 local CHECK_SECONDS = 0.25
 local ABOVE_SPAWN = 4 -- studs over the spawn pad
 

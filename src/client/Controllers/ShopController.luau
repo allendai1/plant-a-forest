@@ -18,6 +18,7 @@ local CollectionService = game:GetService("CollectionService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage.Shared
@@ -31,13 +32,14 @@ local UIStyle = require(script.Parent.Parent.UIStyle)
 
 local CHECK_SECONDS = 0.2
 local RING_HEIGHT = 8 -- the ring counts up to this far above it
-local WIDTH = 640
+local WIDTH = 860 -- wide rows, like the reference game's upgrades (2026-10-11, the user; was 640)
 local HINT_SECONDS = 2.5
 local PIP = 13 -- level pip size
 local PIP_ON = Color3.fromRGB(255, 205, 80)
 local PIP_OFF = Color3.fromRGB(40, 32, 26)
 local GROW = 1.4 -- the upgrade shop opens this much bigger than the HUD scale (1.25 until the user asked for bigger)
 local SPOT_PULSE = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true) -- the tutorial spotlight ring
+local DIM_TRANSPARENCY = 0.35 -- the tutorial spotlight's shade over the rest of the screen
 local SEEDS_HEIGHT = 568 -- the seed page: the restock line and five 96-pixel cards, no scrolling
 local SEEDS_HEIGHT_TOUCH = 300 -- phones: about three cards, the rest scroll
 
@@ -49,7 +51,6 @@ type Row = {
 	button: TextButton,
 	robux: TextButton,
 	spot: Frame,
-	shade: Frame,
 }
 type SeedRow = { def: GameConfig.SeedDef, frame: Frame, stock: TextLabel, button: TextButton, robux: TextButton }
 
@@ -57,6 +58,9 @@ local ShopController = {}
 
 local localPlayer = Players.LocalPlayer
 local rows: { Row } = {}
+local spotlightOn = false
+local closeSpot: Frame -- the spotlight on the X, once the tutorial's upgrade is bought (refreshSpotlight)
+local dims: { Frame } = {} -- the spotlight's shade: four frames around the spotlit card
 local seedRows: { SeedRow } = {}
 local restockLabel: TextLabel? = nil
 local hintLabel: TextLabel? = nil
@@ -116,21 +120,67 @@ end
 -- What an upgrade does at a level, e.g. "4 per press" or "38 studs".
 local function effect(id: string, level: number): string
 	local value = GameConfig.upgradeValue(id, level)
+	if id == "LuckyPlanks" then
+		return `{string.format("%g", math.round(value * 1000) / 10)}% lucky` -- 0.5% steps
+	end
 	if id == "PlantingRange" then
 		local trees = level + 1 -- each level reaches one more tree
-		return `Reach {trees} tree{if trees == 1 then "" else "s"}`
+		return `Reach {trees} section{if trees == 1 then "" else "s"}`
 	end
 	return `{value} per press`
 end
 
 -- The tutorial's shop step (2026-10-09, the user's ask): a pulsing gold ring and "Buy this first!" on
--- Tutorial.ShopUpgrade (Bulk Pickup), the other cards dimmed.
+-- Tutorial.ShopUpgrade (Bulk Pickup), and everything else on screen shaded (2026-10-10, the user's ask: only the
+-- other cards were).
+-- Once it's bought (the next step, "Collect more planks"), the spotlight moves to the X (2026-10-11, the user's ask).
 local function refreshSpotlight()
-	local on = attribute("TutorialStep") == table.find(GameConfig.Tutorial.Steps, "Shop")
+	local step = attribute("TutorialStep")
+	spotlightOn = step == table.find(GameConfig.Tutorial.Steps, "Shop")
 	for _, row in rows do
-		local spotlit = row.id == GameConfig.Tutorial.ShopUpgrade
-		row.spot.Visible = on and spotlit
-		row.shade.Visible = on and not spotlit
+		row.spot.Visible = spotlightOn and row.id == GameConfig.Tutorial.ShopUpgrade
+	end
+	if closeSpot then
+		closeSpot.Visible = step == table.find(GameConfig.Tutorial.Steps, "PickUpMore")
+	end
+end
+
+-- The shade's four frames, every frame, around the spotlit card (it scales and moves with the window) and its tag.
+-- They don't take clicks, so the X still closes the shop.
+local function placeDims(gui: ScreenGui)
+	local spot: Frame? = if closeSpot and closeSpot.Visible then closeSpot else nil
+	for _, row in rows do
+		if row.spot.Visible then
+			spot = row.spot
+		end
+	end
+	local show = gui.Enabled and spot ~= nil and spot.AbsoluteSize.X > 0
+	for _, dim in dims do
+		dim.Visible = show
+	end
+	if not (show and spot) then
+		return
+	end
+	local area = gui.AbsoluteSize
+	local tag = spot:FindFirstChildWhichIsA("TextLabel")
+	-- The hole: the spot and its tag together. Whole pixels: fractional edges left a light seam between the pieces.
+	local from, to = spot.AbsolutePosition, spot.AbsolutePosition + spot.AbsoluteSize
+	if tag then
+		from, to = from:Min(tag.AbsolutePosition), to:Max(tag.AbsolutePosition + tag.AbsoluteSize)
+	end
+	from -= gui.AbsolutePosition
+	to -= gui.AbsolutePosition
+	local top, left = math.floor(from.Y), math.floor(from.X)
+	local bottom, right = math.ceil(to.Y), math.ceil(to.X)
+	local rects = {
+		{ 0, 0, area.X, top },
+		{ 0, bottom, area.X, area.Y - bottom },
+		{ 0, top, left, bottom - top },
+		{ right, top, area.X - right, bottom - top },
+	}
+	for i, r in rects do
+		dims[i].Position = UDim2.fromOffset(r[1], r[2])
+		dims[i].Size = UDim2.fromOffset(math.max(r[3], 0), math.max(r[4], 0))
 	end
 end
 
@@ -305,17 +355,43 @@ local function buildPanel(): ScreenGui
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
 	holder.Parent = gui
-	UIStyle.autoScale(holder, if UIStyle.isTouch() then 1 else GROW) -- bigger on desktop, like Build the Pyramid's upgrades
+	UIStyle.windowScale(holder, GROW) -- bigger on desktop, like Build the Pyramid's upgrades; on phones as big as fits (UIStyle.windowScale)
 	UIStyle.blurBehind(gui)
+	for i = 1, 4 do
+		local dim = Instance.new("Frame")
+		dim.Name = "SpotlightShade"
+		dim.BackgroundColor3 = Color3.new(0, 0, 0)
+		dim.BackgroundTransparency = DIM_TRANSPARENCY
+		dim.BorderSizePixel = 0
+		dim.Visible = false
+		dim.ZIndex = 20 -- over the whole window (Sibling ZIndex: above the holder and all of it)
+		dim.Parent = gui
+		dims[i] = dim
+	end
 	local panel = UIStyle.panel(holder)
 	panel.Size = UDim2.fromScale(1, 0)
 	panel.AutomaticSize = Enum.AutomaticSize.Y
 	UIStyle.padding(panel, 18)
 	UIStyle.list(panel, false, 12)
-	UIStyle.closeButton(holder, function()
+	local close = UIStyle.closeButton(holder, function()
 		dismissed = true
 		gui.Enabled = false
 	end)
+	-- The tutorial's spotlight on the X (refreshSpotlight): a pulsing gold ring and "Close the shop" under it.
+	closeSpot = Instance.new("Frame")
+	closeSpot.Name = "Spotlight"
+	closeSpot.AnchorPoint = Vector2.new(0.5, 0.5)
+	closeSpot.Position = UDim2.fromScale(0.5, 0.5)
+	closeSpot.Size = UDim2.new(1, 12, 1, 12)
+	closeSpot.BackgroundTransparency = 1
+	closeSpot.Visible = false
+	closeSpot.ZIndex = 10
+	closeSpot.Parent = close
+	UIStyle.corner(closeSpot, 14)
+	TweenService:Create(UIStyle.stroke(closeSpot, 5, UIStyle.GOLD, true), SPOT_PULSE, { Transparency = 0.7 }):Play()
+	local closeTag = UIStyle.text(closeSpot, "Close the shop", 22, UIStyle.GOLD)
+	closeTag.AnchorPoint = Vector2.new(0.5, 0)
+	closeTag.Position = UDim2.new(0.5, 0, 1, 6)
 
 	local title = UIStyle.text(panel, "", 44, UIStyle.GOLD)
 	title.Name = "Title"
@@ -356,7 +432,7 @@ local function buildPanel(): ScreenGui
 			UIStyle.stroke(pip, 2, nil, true)
 			table.insert(pips, pip)
 		end
-		local detail = UIStyle.text(frame, "", 18, UIStyle.GREY)
+		local detail = UIStyle.text(frame, "", 20, UIStyle.GREY)
 		detail.RichText = true
 		detail.Position = UDim2.fromOffset(80, 36)
 		local robux = UIStyle.button(frame, "", UIStyle.Colors.Green, UDim2.fromOffset(84, 44), 24)
@@ -365,7 +441,7 @@ local function buildPanel(): ScreenGui
 		local button = UIStyle.button(frame, "", UIStyle.Colors.Gold, UDim2.fromOffset(130, 44), 22)
 		button.AnchorPoint = Vector2.new(1, 0.5)
 		button.Position = UDim2.new(1, -104, 0.5, 0)
-		-- The tutorial's spotlight (refreshSpotlight): a gold ring around the card, or a shade over it.
+		-- The tutorial's spotlight (refreshSpotlight): a gold ring around the card; placeDims shades the rest.
 		local spot = Instance.new("Frame")
 		spot.Name = "Spotlight"
 		spot.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -381,15 +457,6 @@ local function buildPanel(): ScreenGui
 		local tag = UIStyle.text(spot, "Buy this first!", 22, UIStyle.GOLD)
 		tag.AnchorPoint = Vector2.new(0.5, 0.5)
 		tag.Position = UDim2.fromScale(0.5, 0)
-		local shade = Instance.new("Frame")
-		shade.Name = "Shade"
-		shade.Size = UDim2.fromScale(1, 1)
-		shade.BackgroundColor3 = Color3.new(0, 0, 0)
-		shade.BackgroundTransparency = 0.5
-		shade.Visible = false
-		shade.ZIndex = 10
-		shade.Parent = frame
-		UIStyle.corner(shade, 12)
 		table.insert(rows, {
 			id = id,
 			frame = frame,
@@ -398,7 +465,6 @@ local function buildPanel(): ScreenGui
 			button = button,
 			robux = robux,
 			spot = spot,
-			shade = shade,
 		})
 		button.Activated:Connect(function()
 			local cost = GameConfig.upgradeCost(id, attribute(id .. "Level") + 1)
@@ -430,6 +496,9 @@ end
 
 function ShopController.start()
 	local gui = buildPanel()
+	RunService.RenderStepped:Connect(function()
+		placeDims(gui)
+	end)
 	localPlayer:GetAttributeChangedSignal("Coins"):Connect(refreshAll)
 	localPlayer:GetAttributeChangedSignal("TutorialStep"):Connect(refreshSpotlight)
 	for _, row in rows do

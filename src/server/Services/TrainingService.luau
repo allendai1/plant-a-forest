@@ -79,7 +79,9 @@ local function isUnlocked(player: Player, multiplier: number): boolean
 	if needed == nil or profile == nil then
 		return false
 	end
-	return profile.ForestsCompleted >= needed or PassService.owns(player, multiplier)
+	return profile.ForestsCompleted >= needed
+		or PassService.owns(player, multiplier)
+		or multiplier <= profile.DailyGym -- a daily reward's gym, and every tier below it
 end
 
 -- The best station this player can train on (by forests or a station pass); the Spring multiplies it.
@@ -229,14 +231,14 @@ end
 
 local function inSpring(root: BasePart?): boolean
 	local center = ReplicatedStorage:FindFirstChild("ForestState")
-	local origin = center and center:GetAttribute("Center")
+	local origin = center and (center:GetAttribute("SpringCenter") or center:GetAttribute("Center"))
 	if not root or typeof(origin) ~= "Vector3" then
 		return false
 	end
 	local offset = root.Position - origin
 	local above = offset.Y - GameConfig.Awakening.SpringHeightStuds -- over the Spring's floor
 	return Vector2.new(offset.X, offset.Z).Magnitude <= GameConfig.Awakening.SpringRadiusStuds
-		and above >= -1
+		and above >= -6 -- down in Springtown's pool (tools/build_town.luau, about 4.8 deep; was -1)
 		and above <= SPRING_HEIGHT
 end
 

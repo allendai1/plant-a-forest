@@ -125,7 +125,7 @@ local function spin(gui: ScreenGui, winner: number)
 		table.insert(cards, card(strip, if i == WIN_INDEX then winner else fillerTier(rng), (i - 1) * (CARD + GAP)))
 	end
 	local title = holder:FindFirstChild("Title", true) :: TextLabel
-	title.Text = "Choosing the next world..."
+	title.Text = "Choosing the next canyon..."
 
 	-- Stop with the marker somewhere on the winning card, not always dead center.
 	local landing = (WIN_INDEX - 1) * (CARD + GAP) + CARD / 2 + rng:NextNumber(-0.35, 0.35) * CARD
@@ -155,14 +155,14 @@ local function spin(gui: ScreenGui, winner: number)
 	t:Destroy()
 
 	local tier = GameConfig.Tiers[winner]
-	title.Text = `Next world: {tier.Name}!`
+	title.Text = `Next canyon: {tier.Name}!`
 	Sounds.play(if tier.CoinMultiplier > 1 then "LevelUp" else "Notify")
 	local won = cards[WIN_INDEX]
 	local pop = Instance.new("UIScale")
 	pop.Parent = won
 	TweenService:Create(pop, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 1, true), { Scale = 1.12 })
 		:Play()
-	HUD.banner(if tier.CoinMultiplier > 1 then `Next world: {tier.Name}! {coinsText(tier)}!` else `Next world: {tier.Name}!`)
+	HUD.banner(if tier.CoinMultiplier > 1 then `Next canyon: {tier.Name}! {coinsText(tier)}!` else `Next canyon: {tier.Name}!`)
 	task.wait(GameConfig.Roulette.HoldSeconds)
 	gui.Enabled = false
 	spinning = false
@@ -183,7 +183,7 @@ local function build(): ScreenGui
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
 	holder.Parent = gui
-	UIStyle.autoScale(holder)
+	UIStyle.windowScale(holder)
 	local panel = UIStyle.panel(holder)
 	panel.Size = UDim2.fromScale(1, 0)
 	panel.AutomaticSize = Enum.AutomaticSize.Y
@@ -237,7 +237,7 @@ local function build(): ScreenGui
 	return gui
 end
 
--- "Kyoto Forest · 2x coins" in a bonus world, nothing in a normal (1x) world (the user's call, 2026-10-07). It's a
+-- "Verdon Gorge · 2x coins" in a bonus world, nothing in a normal (1x) world (the user's call, 2026-10-07). It's a
 -- line in the HUD's top group, under the Forest Bar's buttons (above them on phones, where the group sits at the
 -- bottom), so it stays with the bar instead of floating mid-screen (2026-10-08, the user's ask).
 local function buildWorldLabel()

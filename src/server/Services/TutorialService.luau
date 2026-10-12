@@ -2,14 +2,16 @@
 -- TutorialService: the first-time tutorial's steps (2026-10-07, the user's sequence). The step is saved as
 -- TutorialStep (DataService; the attribute drives TutorialController's prompt and arrow):
 --   0 the story intro (the client plays it, then sends TutorialIntroDone)
---   1 PickUp      done when you carry acorns
---   2 Plant       done when you've planted one
+--   1 PickUp      done when you carry planks
+--   2 Plant       done when you've placed one
 --   3 Train       done at Tutorial.TrainedStrength (the bench)
 --   4 TrainSpeed  done at Tutorial.TrainedSpeed (the treadmill)
---   5 PickUpMore  done when you're full (your new capacity)
---   6 PlantMore   done when you've planted them all
---   7 Shop        done when you own any upgrade level; reaching it tops your coins up to Tutorial.ShopCoins
+--   5 Shop        done when you own any upgrade level; reaching it tops your coins up to Tutorial.ShopCoins
+--   6 PickUpMore  done when you're full (your capacity)
+--   7 Build       done when you place a plank after reaching it ("Start building!")
 --   8 DoneStep    finished
+-- (Fill up and place-them-all steps came between TrainSpeed and Shop until 2026-10-10; the last two were added
+-- after the shop on 2026-10-11.)
 -- Several steps can finish at once (e.g. already full when Train ends). Each step reached is logged to the
 -- Tutorial analytics funnel.
 
@@ -25,6 +27,8 @@ local Analytics = require(script.Parent.Parent.Analytics)
 local WATCHED = { "Carried", "SeedsPlanted", "Strength", "Speed", "BulkPickupLevel", "BulkPlantLevel", "PlantingRangeLevel" }
 
 local TutorialService = {}
+
+local plantedAtBuild: { [Player]: number } = {} -- SeedsPlanted when the Build step began (not saved: a rejoin restarts it)
 
 local function number(player: Player, name: string): number
 	local value = player:GetAttribute(name)
@@ -42,10 +46,6 @@ local function isDone(player: Player, step: string): boolean
 		return number(player, "Strength") >= GameConfig.Tutorial.TrainedStrength
 	elseif step == "TrainSpeed" then
 		return number(player, "Speed") >= GameConfig.Tutorial.TrainedSpeed
-	elseif step == "PickUpMore" then
-		return carried >= GameConfig.capacity(number(player, "Strength"))
-	elseif step == "PlantMore" then
-		return carried == 0
 	elseif step == "Shop" then
 		for _, id in GameConfig.ShopUpgrades do
 			if number(player, id .. "Level") > 0 then
@@ -53,6 +53,16 @@ local function isDone(player: Player, step: string): boolean
 			end
 		end
 		return false
+	elseif step == "PickUpMore" then
+		return carried >= GameConfig.capacity(number(player, "Strength"))
+	elseif step == "Build" then
+		local planted = number(player, "SeedsPlanted")
+		local from = plantedAtBuild[player]
+		if not from then
+			plantedAtBuild[player] = planted
+			return false
+		end
+		return planted > from
 	end
 	return true
 end
@@ -111,6 +121,9 @@ function TutorialService.init()
 		end
 	end)
 	Players.PlayerAdded:Connect(onPlayerAdded)
+	Players.PlayerRemoving:Connect(function(player)
+		plantedAtBuild[player] = nil
+	end)
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)
 	end

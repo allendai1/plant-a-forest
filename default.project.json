@@ -23,6 +23,11 @@
 			"$properties": {
 				"StreamingEnabled": true
 			}
+		},
+		"ReplicatedFirst": {
+			"Loading": {
+				"$path": "src/first/Loading.client.luau"
+			}
 		}
 	}
 }

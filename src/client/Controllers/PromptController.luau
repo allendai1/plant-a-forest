@@ -25,8 +25,12 @@ local KEY_SIZE = 62
 local SCREEN_Y = 0.86 -- the pile prompt's bottom edge, as a fraction of the screen height
 local SCREEN_Y_TOUCH = 0.7 -- phones: above the Forest Bar, which sits at the bottom there
 local PICKUP_POP = 1.25 -- the pile prompt bumps to this size on each pickup
-local PICKUP_SOUND_ID = "rbxassetid://140323850218372" -- Creator Store "Pop Sound Effect", 0.2 s, free
-local PICKUP_VOLUME = 0.175 -- halved, then 30% lower (the user, 2026-10-08): it lands on the acorn merges and read as too loud
+-- A plank grabbed off the pile: Creator Store "Wood Impacts 2X4 Planks Hitting Floor 21" (Pro Sound Effects, free), a
+-- real 2x4's knock that's gone in about 0.05 s, so held grabs stay crisp (the user's ask, 2026-10-10; was "Pop Sound
+-- Effect" 140323850218372 from the acorns). Close alternatives from the same set: 9120914570 (take 22, a touch fuller),
+-- 9120914426 (take 19, the shortest).
+local PICKUP_SOUND_ID = "rbxassetid://9120914507"
+local PICKUP_VOLUME = 0.3
 local PICKUP_PITCH_FROM, PICKUP_PITCH_STEP, PICKUP_PITCH_MAX = 1, 0.025, 1.4 -- rises over a run of grabs
 local PICKUP_RUN_SECONDS = 0.8 -- grabs closer together than this count as one run
 
@@ -71,17 +75,19 @@ local function onPickup()
 	task.delay(1, sound.Destroy, sound)
 end
 
-local function keyText(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInputType): string
-	if inputType == Enum.ProximityPromptInputType.Gamepad then
+-- UIStyle.inputKind, not Roblox's input type: Studio's phone view moved by WASD showed "E" on a phone.
+local function keyText(prompt: ProximityPrompt): string
+	local kind = UIStyle.inputKind()
+	if kind == "Gamepad" then
 		return (prompt.GamepadKeyCode.Name:gsub("^Button", ""))
-	elseif inputType == Enum.ProximityPromptInputType.Touch then
+	elseif kind == "Touch" then
 		return "TAP"
 	end
 	local text = UserInputService:GetStringForKeyCode(prompt.KeyboardKeyCode)
 	return if text ~= "" then text:upper() else prompt.KeyboardKeyCode.Name
 end
 
-local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInputType)
+local function show(prompt: ProximityPrompt)
 	local scale = UIStyle.screenScale() -- smaller on phones, like the HUD
 	local onScreen = isPile(prompt)
 	local gui: LayerCollector
@@ -152,7 +158,7 @@ local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInpu
 	hold.BackgroundTransparency = 0.4
 	hold.BorderSizePixel = 0
 	hold.Parent = key
-	local letter = keyText(prompt, inputType)
+	local letter = keyText(prompt)
 	local keyLabel = UIStyle.text(key, letter, if #letter > 2 then 20 else 38)
 	keyLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 	keyLabel.Position = UDim2.fromScale(0.5, 0.5)
@@ -205,7 +211,7 @@ local function show(prompt: ProximityPrompt, inputType: Enum.ProximityPromptInpu
 			styleAction()
 		end)
 	)
-	if onScreen or inputType == Enum.ProximityPromptInputType.Touch then -- the pile prompt is clickable too
+	if onScreen or letter == "TAP" then -- the pile prompt is clickable too
 		local held = false
 		panel.InputBegan:Connect(function(input)
 			local kind = input.UserInputType
@@ -256,9 +262,9 @@ function PromptController.start()
 		end
 		carried = now
 	end)
-	ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
+	ProximityPromptService.PromptShown:Connect(function(prompt)
 		if prompt.Style == Enum.ProximityPromptStyle.Custom then
-			show(prompt, inputType)
+			show(prompt)
 		end
 	end)
 end

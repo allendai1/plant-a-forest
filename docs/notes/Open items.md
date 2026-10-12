@@ -2,8 +2,18 @@
 
 Things left open after the 2026-10-08/09 session. Delete a line when it's done.
 
+**Grand Canyon game, as of 2026-10-12** (newest first; the older lines below are mostly Plant Trees!):
+- **Publish:** the loading screen, tutorial belt steps, belts, quest spotlight and shop fixes are synced to Studio but not published.
+- **Check the join loading bar** (full-width yellow rectangle; the status line was raised above it, not seen yet).
+- **Decide:** should a new server's first bridge start 25–35% built? ([Grand Canyon game](Grand%20Canyon%20game.md))
+- **Touchscreen laptop:** does the Forest Bar sit at the top now (Studio and live)?
+- **Maybe:** fit the Grand Canyon's and Zion's far scenery to their walls like Verdon's (a re-upload each).
+
 - **Save the Studio place.** Everything from this session is synced to Studio but only kept once you save the place.
-- **Nothing is committed to git** since `a3776ed`. Commit when you're ready.
+- **Grand Canyon game (2026-10-10):** Plant Trees! is committed on `main` (tag `plant-trees-final`); the new game is built on the `grand-canyon` branch. First playable built and synced (2026-10-10): **save the place in Studio**; check the name isn't taken; dashboard renames. Details and what's left in the note. ([Grand Canyon game](Grand%20Canyon%20game.md))
+- **BuilderBot™ pass icon:** the pass is renamed BuilderBot™ on Roblox (2026-10-11) but still shows the God of Construction's icon; a new render of the robot could replace it. ([Economy review](Economy%20review.md))
+- **God of Hammers mech v2 (2026-10-11):** imported into Studio (asset 136642409003396); **save the place**. Not checked yet: the Robux shop's preview card, the planks-carry pose, a phone. The `GodOfHammers` scene in Blender is unsaved too. ([Grand Canyon game](Grand%20Canyon%20game.md))
+- **Visitable landmarks (saved for after launch, 2026-10-10):** Vulcan's Throne first, then the Lava Falls Trail. ([Visitable landmarks](Visitable%20landmarks.md))
 - **Free gifts:** merge the favorite and group gifts into one, or relabel the group board? ([Free gifts](Free%20gifts.md))
 - **Balancing sheet:** add `Tutorial.RemindMaxStrength` (200) to `docs/Balancing.xlsx`. ([Training tip](Training%20tip.md))
 - **Pass icons:** check the store page once Roblox finishes reviewing the 7 icons; maybe use them on the SHOP's training cards. ([Training pass icons](Training%20pass%20icons.md))

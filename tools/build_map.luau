@@ -608,7 +608,7 @@ do
 	local text = Instance.new("TextLabel")
 	text.Size = UDim2.fromScale(1, 1)
 	text.BackgroundTransparency = 1
-	text.Font = Enum.Font.FredokaOne
+	text.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 	text.TextScaled = true
 	text.TextColor3 = Color3.fromRGB(90, 255, 220)
 	text.TextStrokeTransparency = 0.3
@@ -635,7 +635,7 @@ if station then
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1
-		label.Font = Enum.Font.FredokaOne
+		label.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 		label.TextScaled = true
 		label.TextColor3 = Color3.fromRGB(255, 226, 150)
 		label.TextStrokeTransparency = 0
@@ -851,7 +851,7 @@ for i, angle in RACK_ANGLES do
 	local text = Instance.new("TextLabel")
 	text.Size = UDim2.fromScale(1, 1)
 	text.BackgroundTransparency = 1
-	text.Font = Enum.Font.FredokaOne
+	text.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 	text.TextScaled = true
 	text.TextColor3 = Color3.fromRGB(255, 230, 150)
 	text.TextStrokeTransparency = 0.3
@@ -1101,12 +1101,12 @@ for index, tier in TIERS do
 	end
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(270, 64) -- room for "Requirements: 100" and its icon (bigger since 2026-10-08)
-	gui.StudsOffsetWorldSpace = Vector3.new(0, 13, 0) -- 13 since 2026-10-08 (was 9; the user wanted it higher)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, 20, 0) -- 20 since 2026-10-11 (was 13, then 9 before that; the user: in the way up close)
 	gui.MaxDistance = 120
 	local title = Instance.new("TextLabel")
 	title.Size = UDim2.fromScale(1, 0.58)
 	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.FredokaOne
+	title.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 	title.TextScaled = true
 	title.TextColor3 = tier.color
 	title.TextStrokeTransparency = 0.2
@@ -1132,7 +1132,7 @@ for index, tier in TIERS do
 	row.Parent = line
 	local sub = Instance.new("TextLabel")
 	sub.BackgroundTransparency = 1
-	sub.Font = Enum.Font.FredokaOne
+	sub.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 	sub.TextSize = 23 -- was 17 (the user wanted it larger, 2026-10-08)
 	sub.Size = UDim2.fromScale(0, 1)
 	sub.AutomaticSize = Enum.AutomaticSize.X
@@ -1474,7 +1474,7 @@ sign.MaxDistance = 120
 local signText = Instance.new("TextLabel")
 signText.Size = UDim2.fromScale(1, 1)
 signText.BackgroundTransparency = 1
-signText.Font = Enum.Font.FredokaOne
+signText.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 signText.TextScaled = true
 signText.TextColor3 = Color3.fromRGB(255, 140, 190)
 signText.TextStrokeTransparency = 0.3
@@ -1578,7 +1578,7 @@ if Lobby:FindFirstChild("SeedStall") then
 	local text = Instance.new("TextLabel")
 	text.Size = UDim2.fromScale(1, 1)
 	text.BackgroundTransparency = 1
-	text.Font = Enum.Font.FredokaOne
+	text.Font = Enum.Font.GothamBlack -- the GUIs' font (UIStyle.FONT; FredokaOne until 2026-10-10)
 	text.TextScaled = true
 	text.TextColor3 = STALL_GLOW
 	text.TextStrokeTransparency = 0.3
@@ -1654,6 +1654,15 @@ for _, label in map:GetDescendants() do
 		label.Font = UIStyle.FONT
 		UIStyle.dropShadow(label, if label.TextScaled then nil else label.TextSize / 12, false, UIStyle.THIN_DROP)
 		signs += 1
+		-- The floating signs' gradient, lighter at the top, like Build the Pyramid's (2026-10-11, the user): UPGRADES,
+		-- PLANKS and the gym tiers' "10x" (not their "Requirements" lines).
+		if label:FindFirstAncestorWhichIsA("BillboardGui") then
+			if label.Text == "UPGRADES" then
+				UIStyle.textGradient(label, Color3.fromRGB(170, 255, 238), Color3.fromRGB(25, 190, 160))
+			elseif label.Text == "PLANKS" or string.match(label.Text, "^%d+x$") then
+				UIStyle.textGradient(label)
+			end
+		end
 	end
 end
 table.insert(log, `{signs} signs styled`)

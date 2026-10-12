@@ -12,8 +12,7 @@ export type EventName =
 	| "BuyUpgrade"
 	| "HexBatch" -- S->C: Types.HexBatch
 	| "AwakeningReward" -- S->C: { coins: number, planted: number?, needed: number? } (coins 0 = no forest credit)
-	| "ClaimFreeGift"
-	| "ClaimGroupGift" -- C->S, no payload: after the join-group prompt; the server checks membership itself
+	| "ClaimFreeGift" -- C->S, no payload: the free gift, after favoriting and joining the group (the server checks the group)
 	| "LeaveBench" -- C->S, no payload
 	| "StationLocked" -- S->C: multiplier, forestsNeeded
 	| "SetWalkCap" -- C->S: cap (studs per second; 0 = no limit)
@@ -24,6 +23,10 @@ export type EventName =
 	| "TutorialIntroDone" -- C->S, no payload: the story intro was watched or skipped (TutorialStep 0 -> 1)
 	| "DropSeeds" -- C->S, no payload: drop everything you carry (lobby only, CarryService)
 	| "ClaimQuest" -- C->S, no payload: claim the current starter quest (QuestService)
+	| "EquipHat" -- C->S: rank index (1..#Ranks, a rank reached) or 0 = always the newest (OutfitService)
+	| "ClaimDaily" -- C->S, no payload: today's daily reward (DailyService)
+	| "BuyCharacter" -- C->S: a GameConfig.HandsPasses index, bought with coins (EconomyService)
+	| "LuckyPlanks" -- S->C: { position, count, ... }: planks that came back to your hands, by the slot they were placed in
 
 -- GetForest: () -> Types.Snapshot? (nil when rate-limited)
 -- RedeemCode: (code: string) -> (ok: boolean, message: string), the CODES panel (CodeService)
@@ -35,7 +38,6 @@ local EVENTS: { EventName } = {
 	"HexBatch",
 	"AwakeningReward",
 	"ClaimFreeGift",
-	"ClaimGroupGift",
 	"LeaveBench",
 	"StationLocked",
 	"SetWalkCap",
@@ -46,6 +48,10 @@ local EVENTS: { EventName } = {
 	"TutorialIntroDone",
 	"DropSeeds",
 	"ClaimQuest",
+	"EquipHat",
+	"ClaimDaily",
+	"BuyCharacter",
+	"LuckyPlanks",
 }
 
 local FUNCTIONS: { FunctionName } = { "GetForest", "RedeemCode" }

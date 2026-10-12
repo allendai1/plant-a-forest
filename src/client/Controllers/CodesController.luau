@@ -37,7 +37,7 @@ function CodesController.start()
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
 	holder.Parent = screen
-	UIStyle.autoScale(holder)
+	UIStyle.windowScale(holder)
 	local panel = UIStyle.panel(holder)
 	panel.Size = UDim2.fromScale(1, 0)
 	panel.AutomaticSize = Enum.AutomaticSize.Y

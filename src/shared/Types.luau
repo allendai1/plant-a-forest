@@ -1,8 +1,8 @@
 --!strict
 -- Types that cross the client/server boundary (docs/ARCHITECTURE.md section 6).
 
--- The GetForest snapshot. Plots are numbered 1..N in HexGrid.rings order.
--- layout: q, r, y per plot (3 numbers each); y is the ground height from the server's raycast.
+-- The GetForest snapshot. Plots (bridge slots) are numbered 1..N, row by row from the near rim.
+-- layout: q, r, y per plot (3 numbers each): column, row and the deck height (BridgeGrid).
 -- state: seeds, species, mutation, starterUserId, treeSeed per plot (5 numbers each); 0 = none.
 export type Snapshot = {
 	seq: number,

@@ -1,34 +1,33 @@
 --!strict
 -- TutorialController: the first-time experience (docs/plans/M10.md; story intro and fixed steps 2026-10-07).
--- A new player (TutorialStep 0) first sees the story intro: a short cinematic over the island to the World
--- Tree with captions ("Help re-plant the trees to bring back the World Tree!"), which can be skipped. Then one
--- prompt at a time ("2/6 Plant them in the glowing tiles"), with the blue arrow (TargetController's guide beam)
--- leading to where to go. TutorialService (server) saves the step and moves it on:
---   1 grab acorns (arrow to a pile)   2 plant them (the usual arrow to a plot)   3 bench for Strength (the 1x pad)
---   4 run for Speed (the 1x pad)      5 fill up again (arrow to a pile)         6 plant them all
---   7 buy an upgrade (arrow to the shop)
+-- A new player (TutorialStep 0) first sees the story intro (the Springtown story since 2026-10-10): the camera glides
+-- from camp across the canyon to Springtown with captions ("Build a bridge to reach it!"), which can be skipped. Then
+-- one prompt at a time ("2/5 Press E to place planks on the highlighted section"), with the arrow (TargetController's
+-- guide beam) leading to where to go. TutorialService (server) saves the step and moves it on:
+--   1 grab planks (arrow to the pile)   2 place them (the usual arrow to a slot)   3 bench for Strength (the 1x pad)
+--   4 run for Speed (the 1x pad)        5 buy an upgrade (arrow to the shop)
 -- and then "Tutorial finished!". The steps name the button for the device (2026-10-09, the user's ask).
 -- After the tutorial, a training tip: planting Tutorial.RemindTrips loads in a row without training shows "Tip:
 -- train to carry more and walk faster" with the arrow to your best unlocked station for a few seconds (at most once
 -- every RemindCooldown; starting to train or arriving there ends it).
--- Also the free gift (simplified 2026-10-07, the user's call): no panel of our own. A gift button (until it's
--- claimed) and the gift board's E prompt in the lobby (GiftPrompt) open Roblox's own Favorite prompt; nothing pops it
--- up by itself (the timed popup was removed 2026-10-07, the user's call). When the player confirms (or has already
--- favorited the game), the client asks the server for the coins (ClaimFreeGift), which pays once ever.
+-- Also the free gifts' "+N" button at the top (until both are claimed), which opens the FREE GIFTS window
+-- (GiftsController, 2026-10-11; it opened Roblox's favorite prompt before). Nothing pops it up by itself (the timed
+-- popup was removed 2026-10-07, the user's call).
 
-local AvatarEditorService = game:GetService("AvatarEditorService")
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
+local BridgeGrid = require(Shared.BridgeGrid)
 local GameConfig = require(Shared.GameConfig)
 local Remotes = require(Shared.Remotes)
+local BridgeController = require(script.Parent.BridgeController)
 local HUD = require(script.Parent.HUD)
+local GiftsController = require(script.Parent.GiftsController)
 local TargetController = require(script.Parent.TargetController)
 local Sounds = require(script.Parent.Parent.Sounds)
 local UIStyle = require(script.Parent.Parent.UIStyle)
@@ -36,20 +35,28 @@ local UIStyle = require(script.Parent.Parent.UIStyle)
 local CHECK_SECONDS = 0.25
 local FINISHED_SIZE = 0.75 -- the "Tutorial finished!" banner, as a share of a normal banner's size
 local FINISHED_SECONDS = 4 -- and how long it stays (other banners: 3)
--- The story intro: captions in order, each shown for its seconds; the camera sweeps in over all of them.
+-- The story intro: captions in order, each shown for its seconds; meanwhile the camera glides from over camp, along
+-- the bridge's line and up over the canyon, to Springtown on the far rim (the user's story, 2026-10-10).
 local INTRO_LINES = {
-	{ text = "Long ago, a great forest covered this island.", seconds = 3.5 },
-	{ text = "Then the trees were lost, and the World Tree began to fade.", seconds = 4 },
-	{ text = "Help re-plant the trees to bring back the World Tree!", seconds = 4.5, big = true },
+	{ text = "Across {canyon} lies {town}...", seconds = 3.5 }, -- the live canyon's (storyText)
+	{ text = "...but there's no way across.", seconds = 3 },
+	{ text = "Build a bridge to reach it!", seconds = 4, big = true },
 }
-local INTRO_FROM = { distance = 300, height = 140 } -- the camera starts far out and high...
-local INTRO_TO = { distance = 75, height = 30 } -- ...and ends close to the World Tree
-local INTRO_TURN = math.rad(70) -- how far it circles meanwhile
-local INTRO_LOOK_HEIGHT = 18 -- it looks at the World Tree this high up
+local INTRO_FROM = Vector3.new(60, 35, 40) -- over camp (bridge-local: X across, Y up, -Z out across the canyon)...
+local INTRO_TO_TOWN = Vector3.new(-40, 45, 130) -- ...to here from Springtown's middle, looking at it
+local INTRO_ARC = 260 -- how high the camera rises over the canyon on the way
 local BAR_HEIGHT = 0.12 -- the letterbox bars, as a share of the screen height
+local SHOP_RING_STUDS = 14 -- this close to the shop's ring counts as in it (its "Buy an upgrade" half)
 local ARRIVED_STUDS = 6 -- the arrow hides once you're this close (inside the piles' 10-stud grab reach)
 
 local TutorialController = {}
+
+-- `text` with {canyon} and {town} filled in for the live canyon (GameConfig Tiers[].Town, 2026-10-11).
+local function storyText(text: string): string
+	local forestState = ReplicatedStorage:FindFirstChild("ForestState")
+	local tier = GameConfig.tierFor(forestState and forestState:GetAttribute("TierId"))
+	return (string.gsub(string.gsub(text, "{canyon}", tier.Called), "{town}", tier.Town))
+end
 
 local localPlayer = Players.LocalPlayer
 
@@ -72,11 +79,10 @@ local function nearestTagged(tag: string, from: Vector3): Vector3?
 end
 
 -- The button to press on this device: a phone's on-screen button, a gamepad's button or the keyboard key.
+-- UIStyle.inputKind, the same as the pile's prompt, so the two always agree.
 local function key(keyboard: string, phone: string, gamepad: string): string
-	if UIStyle.isTouch() then
-		return phone
-	end
-	return if string.find(UserInputService:GetLastInputType().Name, "Gamepad") then gamepad else keyboard
+	local kind = UIStyle.inputKind()
+	return if kind == "Touch" then phone elseif kind == "Gamepad" then gamepad else keyboard
 end
 
 -- The current step: the prompt to show and where the arrow should lead (nil: the usual behaviour).
@@ -87,47 +93,58 @@ local function currentStep(root: BasePart): (string?, Vector3?)
 	if not (index and name) then
 		return nil, nil -- loading, the intro, or done
 	end
-	local carried, strength, speed = attribute("Carried") or 0, attribute("Strength") or 0, attribute("Speed") or 0
-	local capacity = GameConfig.capacity(strength)
+	local strength, speed = attribute("Strength") or 0, attribute("Speed") or 0
+	-- Short lines, no "3/7" counter (2026-10-11, the user's call: players should read as little as possible). A step
+	-- with two things to do shows one at a time (off the bench, then the treadmill; into the shop's ring, then buy).
 	local text, spot = "", nil
 	if name == "PickUp" then
-		text = `{key("Hold E", "Hold Pick Up Seeds", "Hold X")} at an acorn pile to grab acorns`
+		text = `{key("Hold E", "Hold Pick Up", "Hold X")} at the planks`
 		spot = nearestTagged("SeedRack", root.Position)
 	elseif name == "Plant" then
-		-- "Glowing tiles", not "the glowing ring": since 2026-10-09 tiles a ring further in can be open too.
-		text = `{key("Press E", "Tap Plant", "Press X")} to plant in the glowing tiles`
+		text = `{key("Press E", "Tap Build", "Press X")} to build`
 	elseif name == "Train" then
-		text = `{key("Press E", "Tap Train", "Press X")} at a bench to carry more ({math.floor(strength)}/{t.TrainedStrength})`
+		text = `{key("Press E", "Tap Train", "Press X")} at a bench  {math.floor(strength)}/{t.TrainedStrength}`
 		spot = nearestTagged("TutorialTraining", root.Position)
 	elseif name == "TrainSpeed" then
-		-- Still on the bench from the step before: say how to get off first (you leave a bench by jumping).
 		local benching = localPlayer:GetAttribute("Benching")
-		local getUp = if typeof(benching) == "string" and benching ~= ""
-			then `{key("Press Space", "Tap Jump", "Press A")} to get off the bench, then s`
-			else "S"
-		text = `{getUp}tep on a treadmill to walk faster ({math.floor(speed)}/{t.TrainedSpeed})`
-		spot = nearestTagged("TutorialTraining", root.Position)
-	elseif name == "PickUpMore" then
-		text, spot = `Fill up on acorns ({carried}/{capacity})`, nearestTagged("SeedRack", root.Position)
-	elseif name == "PlantMore" then
-		text = "Plant them all"
+		if typeof(benching) == "string" and benching ~= "" then
+			text = `{key("Press Space", "Tap Jump", "Press A")} to get up` -- you leave a bench by jumping
+		else
+			text = `Run on a treadmill  {math.floor(speed)}/{t.TrainedSpeed}`
+			spot = nearestTagged("TutorialTraining", root.Position)
+		end
 	elseif name == "Shop" then
-		text, spot = "Step into the shop's ring and buy an upgrade", nearestTagged("ShopZone", root.Position)
+		spot = nearestTagged("ShopZone", root.Position)
+		local inRing = spot and (Vector3.new(spot.X, root.Position.Y, spot.Z) - root.Position).Magnitude <= SHOP_RING_STUDS
+		text = if inRing then "Buy an upgrade" else "Go to the shop"
+	elseif name == "PickUpMore" then
+		text = `Grab more planks  {attribute("Carried") or 0}/{GameConfig.capacity(strength)}`
+		spot = nearestTagged("SeedRack", root.Position)
+	elseif name == "Build" then
+		text = "Go build!" -- the usual arrow leads to the bridge
 	end
-	return `{index}/{#t.Steps}  {text}`, spot
+	return text, spot
 end
 
--- The story intro: letterbox bars, captions and a camera sweep in to the World Tree. Skippable. Tells the
--- server when it's over (watched or skipped).
+-- The story intro: letterbox bars, captions and the camera's glide to Springtown. Skippable. Tells the server when
+-- it's over (watched or skipped).
 local function playIntro()
 	if not localPlayer.Character then
 		localPlayer.CharacterAdded:Wait() -- the camera goes back to the character afterwards
 	end
-	task.wait(1) -- let the spawn settle and the map stream in
+	-- After the join loading screen (ReplicatedFirst.Loading sets Loaded once the terrain and the bridge are in; the
+	-- intro used to start before the terrain was there, 2026-10-11). At most 50 s, in case it never says so.
+	local waited = os.clock()
+	while not localPlayer:GetAttribute("Loaded") and os.clock() - waited < 50 do
+		task.wait(0.2)
+	end
+	task.wait(0.5) -- let the spawn settle
 	local forestState = ReplicatedStorage:WaitForChild("ForestState")
-	local centerValue = forestState:GetAttribute("Center")
-	local center = if typeof(centerValue) == "Vector3" then centerValue else Vector3.zero
-	pcall(localPlayer.RequestStreamAroundAsync, localPlayer, center)
+	local frameValue = forestState:GetAttribute("BridgeFrame")
+	local frame = if typeof(frameValue) == "CFrame" then frameValue else CFrame.identity
+	local townValue = forestState:GetAttribute("SpringCenter")
+	local town = if typeof(townValue) == "Vector3" then townValue else frame:PointToWorldSpace(Vector3.new(0, 0, -3060))
+	pcall(localPlayer.RequestStreamAroundAsync, localPlayer, town) -- the terrain under the town, for the last shot
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "TutorialIntro"
 	gui.IgnoreGuiInset = true
@@ -171,25 +188,25 @@ local function playIntro()
 		total += line.seconds
 	end
 	local start = os.clock()
-	local startAngle = math.rad(200)
 	local skipped = false
 	skip.Activated:Connect(function()
 		skipped = true
 	end)
 	local connection = RunService.RenderStepped:Connect(function()
 		local t = math.clamp((os.clock() - start) / total, 0, 1)
-		local ease = 1 - (1 - t) ^ 2
-		local distance = INTRO_FROM.distance + (INTRO_TO.distance - INTRO_FROM.distance) * ease
-		local height = INTRO_FROM.height + (INTRO_TO.height - INTRO_FROM.height) * ease
-		local angle = startAngle + INTRO_TURN * ease
-		local eye = center + Vector3.new(math.cos(angle) * distance, height, math.sin(angle) * distance)
-		camera.CFrame = CFrame.lookAt(eye, center + Vector3.new(0, INTRO_LOOK_HEIGHT, 0))
+		local ease = t * t * (3 - 2 * t)
+		local from = frame:PointToWorldSpace(INTRO_FROM)
+		local to = town + frame:VectorToWorldSpace(INTRO_TO_TOWN)
+		local eye = from:Lerp(to, ease) + Vector3.new(0, math.sin(math.pi * ease) * INTRO_ARC, 0)
+		-- It looks along the bridge's line at first, settling on the town.
+		local ahead = frame:PointToWorldSpace(Vector3.new(0, 0, -600)):Lerp(town + Vector3.new(0, 15, 0), math.min(1, ease * 1.4))
+		camera.CFrame = CFrame.lookAt(eye, ahead)
 	end)
 	for _, line in INTRO_LINES do
 		if skipped then
 			break
 		end
-		caption.Text = line.text
+		caption.Text = storyText(line.text)
 		caption.TextSize = if line.big then 52 else 40
 		caption.TextColor3 = if line.big then Color3.fromRGB(255, 220, 110) else UIStyle.WHITE
 		local pop = Instance.new("UIScale")
@@ -215,28 +232,6 @@ local function playIntro()
 	HUD.setVisible(true)
 	gui:Destroy()
 	Remotes.event("TutorialIntroDone"):FireServer()
-end
-
--- The free gift: Roblox's Favorite prompt; the coins when the player favorites (or already has).
-local asking = false
-local function askFavorite()
-	if asking or attribute("FreeGiftClaimed") ~= 0 then
-		return
-	end
-	asking = true
-	-- (No "already favorited?" check first: AvatarEditorService.GetFavorite needs the player to grant inventory
-	-- access, so it always failed. Roblox's Favorite prompt itself handles a game that's already a favorite.)
-	-- In Studio favoriting can't complete, so the claim only happens in the live game.
-	local prompted =
-		pcall(AvatarEditorService.PromptSetFavorite, AvatarEditorService, game.PlaceId, Enum.AvatarItemType.Asset, true)
-	if prompted then
-		local result = AvatarEditorService.PromptSetFavoriteCompleted:Wait()
-		if result == Enum.AvatarPromptResult.Success then
-			Remotes.event("ClaimFreeGift"):FireServer()
-			HUD.banner(`Thanks for favoriting! +{GameConfig.Economy.FreeGiftCoins} coins`, Color3.fromRGB(255, 160, 205))
-		end
-	end
-	asking = false
 end
 
 local function buildGui(): (TextLabel, TextButton)
@@ -266,7 +261,8 @@ local function buildGui(): (TextLabel, TextButton)
 	giftHolder.Parent = gui
 	UIStyle.autoScale(giftHolder)
 	giftHolder.Size = UDim2.fromOffset(150, 50)
-	-- Just the coin icon and "+500" (the user's call, 2026-10-07): pressing it opens Roblox's favorite prompt.
+	-- Just the coin icon and "+N" (the user's call, 2026-10-07): pressing it opens the FREE GIFTS window (GiftsController;
+	-- it opened Roblox's favorite prompt until 2026-10-11). N is the coins still to be had.
 	-- No background (the user's call): a plain button, so the button style's text copies don't join the row.
 	local giftButton = Instance.new("TextButton")
 	giftButton.Name = "GiftButton"
@@ -283,9 +279,10 @@ local function buildGui(): (TextLabel, TextButton)
 	giftRow.Padding = UDim.new(0, 6)
 	giftRow.Parent = giftButton
 	UIStyle.icon(giftButton, UIStyle.Icons.Coins, 34)
-	UIStyle.text(giftButton, `+{GameConfig.Economy.FreeGiftCoins}`, 28)
+	local giftCoins = UIStyle.text(giftButton, "", 28)
+	giftCoins.Name = "Coins"
 
-	giftButton.Activated:Connect(askFavorite)
+	giftButton.Activated:Connect(GiftsController.open)
 
 	gui.Parent = localPlayer:WaitForChild("PlayerGui")
 	return prompt, giftButton
@@ -307,7 +304,7 @@ function TutorialController.start()
 		elseif step == GameConfig.Tutorial.DoneStep and typeof(lastStep) == "number" and lastStep < step then
 			-- Smaller and a second longer than other banners (the user's call, 2026-10-09).
 			HUD.banner(
-				"Tutorial finished! Work together with others to grow the forest!",
+				storyText("Tutorial done! Build to {town}!"),
 				Color3.fromRGB(170, 255, 140),
 				FINISHED_SIZE,
 				FINISHED_SECONDS
@@ -324,7 +321,7 @@ function TutorialController.start()
 	localPlayer:GetAttributeChangedSignal("FirstTreeDone"):Connect(function()
 		local now = localPlayer:GetAttribute("FirstTreeDone")
 		if firstTree == 0 and now == 1 then
-			HUD.banner(`Your first tree! +{GameConfig.Economy.FirstTreeCoins} coins`, Color3.fromRGB(170, 255, 140))
+			HUD.banner(`Your first section! +{GameConfig.Economy.FirstTreeCoins} coins`, Color3.fromRGB(170, 255, 140))
 			HUD.confetti()
 			Sounds.play("Fanfare")
 		end
@@ -378,75 +375,93 @@ function TutorialController.start()
 			return nil, nil
 		end
 		local spot = bestPad() or nearestTagged("TutorialTraining", root.Position)
-		return "Tip: train to carry more and walk faster", spot
+		return "Train to carry more", spot
 	end
 
-	-- The first forest break (2026-10-09, the user's ask): an arrow into the World Tree, where the Ancient Spring
-	-- trains both stats. Once per player: the server saves SpringGuideSeen the first time they stand in it.
+	-- The first break after a bridge (2026-10-09, the user's ask): an arrow to the Spring, Springtown's pool, which trains
+	-- both stats. Once per player: the server saves SpringGuideSeen the first time they stand in it.
+	-- The conveyor belts (2026-10-11, the user's ask): once the built bridge is long enough to be worth it, players are
+	-- told to ride the belt out when they carry planks and back when they've placed them all, with the arrow pointing at
+	-- the belt's lane. Each belt's hint stops after you've ridden it TipRides times (this session).
+	local rides = { Out = 0, Back = 0 }
+	local riding: string? = nil
+	-- `teaching` (2026-10-11, the user's asks): in the tutorial the belt hints always show. "out" in the steps done on the
+	-- bridge (Plant, Build): take the belt out, "Ride to the end!" on it. "back" in the steps done at camp (the planks,
+	-- the gym, the shop): take the belt back whenever you're out on the bridge, carrying or not.
+	local function beltTip(root: BasePart, teaching: ("out" | "back")?): (string?, Vector3?)
+		local belts = GameConfig.Grid.Belts
+		if not BridgeController.ready() then
+			return nil, nil
+		end
+		local frame = BridgeController.frame()
+		local built = (BridgeController.frontRow() - 1) * GameConfig.Grid.SlotStuds
+		local q, row = BridgeGrid.fromWorld(root.Position, frame)
+		q = BridgeController.laneAt(root.Position) or q -- the belts are wider than their lanes
+		local out = -frame:PointToObjectSpace(root.Position).Z -- studs out from the near rim
+		-- Count a ride each time you step onto a belt's lane out on the bridge.
+		local lane = if out > 20 and out < built
+			then (if q == belts.Out then "Out" elseif q == belts.Back then "Back" else nil)
+			else nil
+		if lane and lane ~= riding then
+			rides[lane] += 1
+		end
+		riding = lane
+		local forestState = ReplicatedStorage:FindFirstChild("ForestState")
+		local open = forestState and forestState:GetAttribute("OpenRow")
+		if built < belts.TipStuds or not (typeof(open) == "Vector2" and open.Y > 0) then -- nothing to build: no hint
+			return nil, nil
+		end
+		local carried = attribute("Carried") or 0
+		local back = math.clamp(row, 1, BridgeController.frontRow() - 1)
+		if teaching == "back" then
+			if out > 150 and q ~= belts.Back then
+				return "Take the conveyor belt back!", BridgeGrid.toWorld(belts.Back, back, frame)
+			end
+			return nil, nil
+		end
+		local outOk = teaching == "out" or rides.Out < belts.TipRides
+		local backOk = teaching == "out" or rides.Back < belts.TipRides
+		if teaching == "out" and carried > 0 and out < built - 150 and q == belts.Out then
+			return "Ride to the end!", nil
+		elseif carried > 0 and out < built - 150 and q ~= belts.Out and outOk then
+			return "Take the conveyor belt out!", BridgeGrid.toWorld(belts.Out, math.max(1, row), frame)
+		elseif carried == 0 and out > 150 and q ~= belts.Back and backOk then
+			return "Take the conveyor belt back!", BridgeGrid.toWorld(belts.Back, back, frame)
+		end
+		return nil, nil
+	end
+
 	local function springGuide(): (string?, Vector3?)
 		local forestState = ReplicatedStorage:FindFirstChild("ForestState")
 		local spring = forestState and forestState:GetAttribute("SpringMultiplier")
-		local center = forestState and forestState:GetAttribute("Center")
+		local center = forestState and (forestState:GetAttribute("SpringCenter") or forestState:GetAttribute("Center"))
 		if attribute("SpringGuideSeen") ~= 0 or typeof(spring) ~= "number" or spring <= 0 or typeof(center) ~= "Vector3" then
 			return nil, nil
 		end
-		if GameConfig.Awakening.SpringHeightStuds <= 0 then
-			return `The forest is grown! Stand inside the World Tree to train {spring}x`, center
-		end
-		-- Up the tree (2026-10-09): to the foot of the climb, then up to the platform once on it.
-		local root = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-		local climbing = root and root:IsA("BasePart") and root.Position.Y > center.Y + 6
-		local target = if climbing
-			then center + Vector3.new(0, GameConfig.Awakening.SpringHeightStuds, 0)
-			else GameConfig.climbStart(center)
-		return `The forest is grown! Climb the World Tree to train {spring}x`, target
+		return `Sit in the Spring: {spring}x Boost!`, center
 	end
 
-	-- Shows or hides the gift board on this client (parts, label, glowing circle).
-	local function showGift(board: Instance, on: boolean)
-		if board:GetAttribute("Shown") == on then
-			return
-		end
-		board:SetAttribute("Shown", on)
-		for _, item in board:GetDescendants() do
-			-- selene: allow(if_same_then_else) -- separate branches so each narrows to a type with Enabled
-			if item:IsA("BasePart") then
-				item.LocalTransparencyModifier = if on then 0 else 1
-			elseif item:IsA("LayerCollector") then
-				item.Enabled = on
-			elseif item:IsA("Beam") then
-				item.Enabled = on
-			end
-		end
-	end
-
-	-- The gift board's E prompt (GiftPrompt) opens the Favorite prompt; it's hidden once the gift is claimed.
-	game:GetService("ProximityPromptService").PromptTriggered:Connect(function(triggered)
-		if CollectionService:HasTag(triggered, "GiftPrompt") and attribute("FreeGiftClaimed") == 0 then
-			task.spawn(askFavorite)
-		end
-	end)
 	while true do
 		task.wait(CHECK_SECONDS)
-		local claimed = attribute("FreeGiftClaimed")
-		giftButton.Visible = claimed == 0 and not introPlaying
-
-		for _, giftPrompt in CollectionService:GetTagged("GiftPrompt") do
-			if giftPrompt:IsA("ProximityPrompt") then
-				giftPrompt.Enabled = claimed == 0
-				-- The whole gift (box, board, label and its glowing circle) disappears for a player who has claimed it,
-				-- now or on an earlier visit (2026-10-08, the user's ask). Local only: others still see theirs.
-				local board = giftPrompt:FindFirstAncestorWhichIsA("Model")
-				if board then
-					showGift(board, claimed == 0)
-				end
-			end
-		end
+		local giftCoins = GiftsController.unclaimedCoins()
+		giftButton.Visible = giftCoins > 0 and not introPlaying
+		local coinsLabel = giftButton:FindFirstChild("Coins") :: TextLabel
+		coinsLabel.Text = `+{UIStyle.commas(giftCoins)}`
 		local character = localPlayer.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		local text, spot = nil, nil
 		if root and root:IsA("BasePart") and not introPlaying then
 			text, spot = springGuide()
+			local step = attribute("TutorialStep") or 0
+			local stepName = GameConfig.Tutorial.Steps[step]
+			local teaching: ("out" | "back")? = if stepName == "Plant" or stepName == "Build"
+				then "out"
+				elseif stepName then "back"
+				else nil
+			local tip, tipSpot = beltTip(root, teaching) -- run every check, so rides are counted
+			if not text and tip and (teaching or step >= GameConfig.Tutorial.DoneStep) then
+				text, spot = tip, tipSpot -- before "Press E to build" / "Go build!", and after the tutorial
+			end
 			if not text then
 				text, spot = currentStep(root)
 			end

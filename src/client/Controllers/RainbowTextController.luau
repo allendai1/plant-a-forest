@@ -3,7 +3,9 @@
 -- (2026-10-08, the user's ask: the 100x pad's title, like the spring's "2X TRAINING" sign). The rainbow tints the
 -- label's colored face (UIStyle's outlined text draws a Face over a Shadow; a plain label is tinted itself), which
 -- is turned white so the colors show true. One loop drives them all.
+-- Also the top rank's hard hat (parts tagged RainbowHat by OutfitService, 2026-10-11): its color cycles the rainbow.
 
+local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 
 local UIStyle = require(script.Parent.Parent.UIStyle)
@@ -43,6 +45,12 @@ function RainbowTextController.start()
 	end)
 	RunService.RenderStepped:Connect(function()
 		local colors = UIStyle.rainbowSequence(os.clock() * SPEED)
+		local hue = Color3.fromHSV((os.clock() * SPEED) % 1, 0.75, 1)
+		for _, hat in CollectionService:GetTagged("RainbowHat") do
+			if hat:IsA("BasePart") then
+				hat.Color = hue
+			end
+		end
 		for i = #gradients, 1, -1 do
 			local gradient = gradients[i]
 			if gradient.Parent then

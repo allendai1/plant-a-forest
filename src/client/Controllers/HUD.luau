@@ -7,7 +7,7 @@
 -- boost pass buttons (each sells the next pass up), then Settings and Codes side by side. Bottom left: the
 -- Friend Boost.
 -- pulseBar() and banner() are played by the section complete moment and others.
--- M6: during the break after a forest, a "Next forest in 1:42" countdown with the Robux button that
+-- M6: during the break after a forest, a "Next bridge in 1:42" countdown with the Robux button that
 -- extends the break for everyone, the Ancient Spring label while you stand in it, and a message when
 -- someone extends the break. AwakeningController hides the HUD during the cutscene (setVisible).
 -- In Studio only, a test panel at the bottom right.
@@ -27,6 +27,8 @@ local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 local Sounds = require(script.Parent.Parent.Sounds)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 local CodesController = require(script.Parent.CodesController)
+local DailyController = require(script.Parent.DailyController)
+local HatsController = require(script.Parent.HatsController)
 local RobuxShopController = require(script.Parent.RobuxShopController)
 local SettingsController = require(script.Parent.SettingsController)
 
@@ -74,15 +76,6 @@ local STRENGTH_HEX = "#ffa030"
 local ICON_OVERLAP = -18 -- the right column's labels (SHOP, 2x Speed...) sit this far up over their icons
 local LEVEL_UP_GAP = 0.9 -- the level-up sound at most this often, so fast training doesn't turn it into noise
 local SPEED_HEX = "#50b4ff"
--- The ring trunk right of the Forest Bar: a tree trunk's cross-section, one ring per forest ring (outer = first).
-local TRUNK_SIZE = 108 -- across, in the bar's pixels
-local TRUNK_GROW_TOUCH = 1.25 -- phones: the trunk this much bigger, alone at the top of the screen
-local TRUNK_HEART = 36 -- the middle disc, with how far along the open ring is (%)
-local TRUNK_WOOD = { Color3.fromRGB(226, 190, 140), Color3.fromRGB(198, 156, 108) } -- rings still to come
-local TRUNK_GROWN = { Color3.fromRGB(96, 196, 84), Color3.fromRGB(70, 160, 64) } -- finished rings
-local TRUNK_OPEN = Color3.fromRGB(255, 232, 160) -- the open ring, glowing like it does in the forest
-local TRUNK_FILL = Color3.fromRGB(150, 240, 120) -- its full-grown trees, sweeping clockwise from the top
-local TRUNK_NEXT_FADE = 0.45 -- the next ring's early trees: the same fill, this transparent (two rings)
 -- Floating "+N" stat popups while training: they pop in somewhere around the middle of the screen,
 -- float up and fade out.
 local GAIN_AREA = Vector2.new(0.32, 0.22) -- how far from the middle they can appear, as a fraction of the screen
@@ -117,14 +110,46 @@ local function group(parent: Instance, name: string): Frame
 	return frame
 end
 
--- A small Robux price tag on a button's top right corner.
+-- A small Robux price tag on a button's top right corner, leaning up to the right (2026-10-11, the user's ask, after a
+-- reference game's tags).
+local PRICE_TILT = -8 -- degrees (negative leans up to the right)
 local function priceTag(parent: Instance): TextLabel
 	local tag = UIStyle.text(parent, "", 22, UIStyle.PRICE)
 	tag.Name = "Price"
 	tag.AnchorPoint = Vector2.new(1, 0.5)
 	tag.Position = UDim2.new(1, 8, 0, 0)
 	tag.ZIndex = 3
+	tag.Rotation = PRICE_TILT
 	return tag
+end
+
+-- The biggest plank pack's text glints gold (2026-10-11, the user's ask, like a reference game's top pack): a yellow
+-- gradient in the letters, its bright band sweeping across on a loop. On the button's text face (UIStyle's outlined text),
+-- so the button's own colors are untouched.
+local SHIMMER_SECONDS = 1.6
+local function shimmer(button: TextButton)
+	local face = button:FindFirstChild("Face")
+	if not (face and face:IsA("TextLabel")) then
+		return
+	end
+	local gold, bright = Color3.fromRGB(255, 190, 30), Color3.fromRGB(255, 250, 200)
+	local gradient = Instance.new("UIGradient")
+	gradient.Name = "Shimmer"
+	gradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, gold),
+		ColorSequenceKeypoint.new(0.4, gold),
+		ColorSequenceKeypoint.new(0.5, bright),
+		ColorSequenceKeypoint.new(0.6, gold),
+		ColorSequenceKeypoint.new(1, gold),
+	})
+	gradient.Rotation = 20
+	gradient.Offset = Vector2.new(-1, 0)
+	gradient.Parent = face
+	TweenService:Create(
+		gradient,
+		TweenInfo.new(SHIMMER_SECONDS, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1),
+		{ Offset = Vector2.new(1, 0) }
+	):Play()
 end
 
 function HUD.pulseBar()
@@ -459,7 +484,14 @@ local function buildTop(gui: ScreenGui)
 	UIStyle.list(buttons, true, if touch then 10 else 16)
 	local buttonSize = if touch then UDim2.fromOffset(112, 44) else UDim2.fromOffset(124, 46)
 	local textSize = if touch then 27 else 30
-	local function productButton(order: number, text: string, colors: { Color3 }, productId: number): TextButton
+	-- `allowed`: when given and false, the button shakes instead of selling.
+	local function productButton(
+		order: number,
+		text: string,
+		colors: { Color3 },
+		productId: number,
+		allowed: (() -> boolean)?
+	): TextButton
 		local button = UIStyle.button(buttons, text, colors, buttonSize, textSize)
 		button.LayoutOrder = order
 		local tag = priceTag(button)
@@ -468,13 +500,43 @@ local function buildTop(gui: ScreenGui)
 		end
 		showPrice()
 		button.Activated:Connect(function()
-			MarketplaceService:PromptProductPurchase(localPlayer, productId)
+			if allowed and not allowed() then
+				UIStyle.deny(button)
+			else
+				MarketplaceService:PromptProductPurchase(localPlayer, productId)
+			end
 		end)
 		return button
 	end
 	local seedButtons, timeButtons, worldButtons = {}, {}, {}
+	-- The plank packs: a share of the bridge each (GameConfig.BarBoosts), shown as planks for this bridge, and only
+	-- for sale while the bridge has room for them (grey otherwise).
+	local function packPlanks(boost: { Share: number, ProductId: number }): number
+		return GameConfig.barBoostPlanks(boost.Share, attribute(forestState, "Target"))
+	end
+	local function packFits(boost: { Share: number, ProductId: number }): boolean
+		return packPlanks(boost) <= attribute(forestState, "Target") - attribute(forestState, "Seeds")
+	end
 	for i, boost in GameConfig.BarBoosts do
-		table.insert(seedButtons, productButton(i + 1, `+{UIStyle.commas(boost.Seeds)}`, BAR_COLORS[i], boost.ProductId))
+		local button = productButton(i + 1, "", BAR_COLORS[i], boost.ProductId, function()
+			return packFits(boost)
+		end)
+		local fits: boolean? = nil
+		local function refreshPack()
+			button.Text = `+{UIStyle.commas(packPlanks(boost))}`
+			local now = packFits(boost)
+			if now ~= fits then
+				fits = now
+				UIStyle.recolor(button, if now then BAR_COLORS[i] else UIStyle.Colors.Grey)
+			end
+		end
+		forestState:GetAttributeChangedSignal("Target"):Connect(refreshPack)
+		forestState:GetAttributeChangedSignal("Seeds"):Connect(refreshPack)
+		refreshPack()
+		if i == #GameConfig.BarBoosts then
+			shimmer(button)
+		end
+		table.insert(seedButtons, button)
 	end
 	-- A time button only sells while the break has room for it (Awakening.MaxBreakMinutes on the clock).
 	local function roomFor(minutes: number): boolean
@@ -559,169 +621,7 @@ local function buildTop(gui: ScreenGui)
 	end)
 	showButtons()
 
-	-- What the open ring needs (the user found "fill the whole ring" wasn't obvious, 2026-10-08): a tree trunk's
-	-- cross-section right of the bar, one ring per forest ring from the outside in, like the forest. Finished rings
-	-- are green, the open ring glows and fills clockwise as its trees finish growing, and the middle shows how far
-	-- along it is in percent. Replaced a "Grow every tree in the glowing ring: 8 / 84" line (the user's idea, the
-	-- same day). Hidden during the break.
-	local trunk = Instance.new("Frame")
-	trunk.Name = "RingTrunk"
-	trunk.Size = UDim2.fromOffset(TRUNK_SIZE, TRUNK_SIZE)
-	trunk.BackgroundTransparency = 1 -- no bark disc behind the rings (the user's call, 2026-10-08)
-	trunk.ZIndex = 3
-	if touch then
-		-- Phones: on its own at the top middle of the screen (2026-10-08, the user's ask; it was right of the bar at
-		-- the bottom). The break's countdown uses that spot, but the trunk is hidden during the break.
-		local holder = Instance.new("Frame")
-		holder.Name = "RingTrunkHolder"
-		holder.BackgroundTransparency = 1
-		holder.AnchorPoint = Vector2.new(0.5, 0)
-		holder.Size = UDim2.fromOffset(TRUNK_SIZE, TRUNK_SIZE)
-		holder.Parent = gui
-		UIStyle.autoScale(holder, TRUNK_GROW_TOUCH)
-		-- At the very top, up in Roblox's top bar row (between its buttons), like the computer layout's bar: the HUD's
-		-- safe insets start below that row, so move up by its height.
-		local function place()
-			holder.Position = UDim2.new(0.5, 0, 0, 4 - GuiService.TopbarInset.Height)
-		end
-		GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(place)
-		place()
-		trunk.Parent = holder
-	else
-		trunk.Position = UDim2.new(1, 12, 0, 0) -- right of the bar, level with its top (the screen's top edge)
-		trunk.Parent = bar
-	end
-	local function disc(parent: Instance, across: number, z: number): Frame
-		local frame = Instance.new("Frame")
-		frame.AnchorPoint = Vector2.new(0.5, 0.5)
-		frame.Position = UDim2.fromScale(0.5, 0.5)
-		frame.Size = UDim2.fromOffset(across, across)
-		frame.BorderSizePixel = 0
-		frame.ZIndex = z
-		frame.Parent = parent
-		local round = Instance.new("UICorner")
-		round.CornerRadius = UDim.new(0.5, 0)
-		round.Parent = frame
-		return frame
-	end
-	-- Half of the open ring's sweep (side 1 right, 0 left): a filled disc clipped to that half, with a gradient
-	-- that's opaque on one side of a line through the middle, so turning it sweeps the half in. The next ring's
-	-- disc covers the middle, leaving only this ring's band.
-	local function sweepHalf(across: number, side: number, z: number): (Frame, UIGradient)
-		local clip = Instance.new("Frame")
-		clip.Name = "Sweep"
-		clip.BackgroundTransparency = 1
-		clip.ClipsDescendants = true
-		clip.AnchorPoint = Vector2.new(0, 0.5)
-		clip.Position = UDim2.new(0.5, (side - 1) * across / 2, 0.5, 0)
-		clip.Size = UDim2.fromOffset(across / 2, across)
-		clip.ZIndex = z
-		clip.Parent = trunk
-		local half = disc(clip, across, z)
-		half.AnchorPoint = Vector2.zero
-		half.Position = UDim2.fromOffset(-side * across / 2, 0)
-		half.BackgroundColor3 = TRUNK_FILL
-		local gradient = Instance.new("UIGradient")
-		gradient.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.5, 0),
-			NumberSequenceKeypoint.new(0.501, 1),
-			NumberSequenceKeypoint.new(1, 1),
-		})
-		gradient.Parent = half
-		return clip, gradient
-	end
-	type TrunkRing = { disc: Frame, sweeps: { Frame }, right: UIGradient, left: UIGradient }
-	local trunkRings: { TrunkRing } = {}
-	local percent: TextLabel? = nil
-	local function buildTrunk(rings: number)
-		for _, child in trunk:GetChildren() do
-			if child:IsA("GuiObject") then
-				child:Destroy()
-			end
-		end
-		table.clear(trunkRings)
-		local outer = TRUNK_SIZE / 2
-		local width = (outer - TRUNK_HEART / 2) / rings
-		for i = 1, rings do
-			local z = 3 + 2 * i
-			local across = 2 * math.round(outer - (i - 1) * width) -- even, so the halves land on whole pixels
-			local ring = disc(trunk, across, z)
-			ring.Name = `Ring{i}`
-			if i == 1 then
-				UIStyle.stroke(ring, 3, nil, true) -- the black edge, like the bar's
-			end
-			local rightClip, right = sweepHalf(across, 1, z + 1)
-			local leftClip, left = sweepHalf(across, 0, z + 1)
-			table.insert(trunkRings, { disc = ring, sweeps = { rightClip, leftClip }, right = right, left = left })
-		end
-		local heart = disc(trunk, TRUNK_HEART, 5 + 2 * rings) -- over the last ring's sweep
-		heart.Name = "Heart"
-		heart.BackgroundColor3 = Color3.fromRGB(120, 80, 50)
-		local label = UIStyle.text(heart, "", 15)
-		label.AnchorPoint = Vector2.new(0.5, 0.5)
-		label.Position = UDim2.fromScale(0.5, 0.5)
-		for _, part in { label :: Instance, unpack(label:GetDescendants()) } do
-			if part:IsA("GuiObject") then
-				part.ZIndex += 6 + 2 * rings
-			end
-		end
-		percent = label
-	end
-	local function refreshTrunk()
-		local rings = attribute(forestState, "RingCount")
-		trunk.Visible = rings > 0 and attribute(forestState, "AwakeningEndsAt") == 0
-		if rings <= 0 then
-			return
-		end
-		if #trunkRings ~= rings then
-			buildTrunk(rings)
-		end
-		-- Which ring is open, counted like the forest's "Ring 3 of 9" (OpenRow is 0 once every ring is done).
-		local row = forestState:GetAttribute("OpenRow")
-		local openRing = if typeof(row) == "Vector2" then row.Y else 0
-		local grid = GameConfig.Grid
-		local open = if openRing == 0
-			then rings + 1
-			elseif forestState:GetAttribute("OutsideIn") ~= false then grid.HubRings + grid.ForestRings - openRing + 1
-			else openRing - grid.HubRings
-		local trees = attribute(forestState, "RingTrees")
-		local grown = attribute(forestState, "RingDone")
-		local turn = if trees > 0 then 360 * math.clamp(grown / trees, 0, 1) else 0
-		-- Two rings (2026-10-09): the next ring's band fills too, fainter, as its early trees finish.
-		local nextTrees = attribute(forestState, "NextRingTrees")
-		local nextTurn = if nextTrees > 0 then 360 * math.clamp(attribute(forestState, "NextRingDone") / nextTrees, 0, 1) else 0
-		-- The trunk's rings sit like the forest's: outer-first forests count from its edge, inner-first ones
-		-- (the layout A/B test) from its heart, like a real tree's growth rings.
-		local inward = forestState:GetAttribute("OutsideIn") ~= false
-		for disc, ring in trunkRings do
-			local i = if inward then disc else rings - disc + 1 -- this disc's ring, in opening order
-			ring.disc.BackgroundColor3 = if i < open
-				then TRUNK_GROWN[disc % 2 + 1]
-				elseif i == open then TRUNK_OPEN
-				else TRUNK_WOOD[disc % 2 + 1]
-			local isNext = i == open + 1 and nextTurn > 0
-			local t = if isNext then nextTurn else turn
-			for _, sweep in ring.sweeps do
-				sweep.Visible = i == open or isNext
-			end
-			for _, gradient in { ring.right, ring.left } do
-				local half = gradient.Parent :: Frame
-				half.BackgroundTransparency = if isNext then TRUNK_NEXT_FADE else 0
-			end
-			ring.right.Rotation = math.clamp(t, 0, 180)
-			ring.left.Rotation = math.clamp(t, 180, 360)
-		end
-		-- The open ring's progress in percent, rounded down so it reads 100% only once it's done (the user's
-		-- pick over the trees left, 2026-10-08).
-		if percent then
-			percent.Text = if open <= rings and trees > 0 then `{math.floor(100 * grown / trees)}%` else ""
-		end
-	end
-	for _, name in { "RingCount", "OpenRow", "RingDone", "RingTrees", "NextRingDone", "NextRingTrees", "AwakeningEndsAt" } do
-		forestState:GetAttributeChangedSignal(name):Connect(refreshTrunk)
-	end
-	refreshTrunk()
+	-- (The ring trunk right of the bar, from Plant Trees!, was taken out on 2026-10-10: the bar shows the progress.)
 
 	local boostTimer = UIStyle.text(top, "", 28, Color3.fromRGB(255, 220, 110))
 	boostTimer.Name = "ServerBoost"
@@ -739,9 +639,9 @@ local function buildTop(gui: ScreenGui)
 		local breakOn = attribute(forestState, "AwakeningEndsAt") > 0
 		local inTutorial = attribute(localPlayer, "TutorialStep") < GameConfig.Tutorial.DoneStep -- one hint at a time
 		credit.Visible = planted < needed and not breakOn and not inTutorial and localPlayer:GetAttribute("ForestPlanted") ~= nil
-		credit.Text = `Plant {needed - planted} more acorns to earn this forest ({planted}/{needed})`
+		credit.Text = `Place {needed - planted} more planks to earn this bridge ({planted}/{needed})`
 		if planted >= needed and not earned and not breakOn then
-			HUD.banner("You'll earn this forest!", Color3.fromRGB(170, 255, 140))
+			HUD.banner("You'll earn this bridge!", Color3.fromRGB(170, 255, 140))
 		end
 		earned = planted >= needed
 	end
@@ -753,7 +653,7 @@ local function buildTop(gui: ScreenGui)
 	-- Banners for everyone when someone buys seeds or the server boost.
 	forestState:GetAttributeChangedSignal("BarBoosts"):Connect(function()
 		local by = forestState:GetAttribute("BarBoostBy")
-		HUD.banner(`{by} added {UIStyle.commas(attribute(forestState, "BarBoostSeeds"))} seeds!`)
+		HUD.banner(`{by} added {UIStyle.commas(attribute(forestState, "BarBoostSeeds"))} planks!`)
 	end)
 	forestState:GetAttributeChangedSignal("ServerBoosts"):Connect(function()
 		local by = forestState:GetAttribute("ServerBoostBy")
@@ -1042,6 +942,10 @@ local function buildRight(gui: Frame)
 		return icon
 	end
 	topbarButton("Settings", 1, SettingsController.toggle):setImage(UIStyle.Icons.Settings.Image):setCaption("Settings")
+	-- The hard hats inventory (2026-10-11, the user's ask): every rank's hat, equip the ones reached.
+	topbarButton("Hats", 2, HatsController.toggle):setLabel("Hats"):setCaption("Your hard hats")
+	-- The gift box picture, not the word "Daily" (the user's ask, 2026-10-11).
+	topbarButton("Daily", 2.5, DailyController.toggle):setImage(UIStyle.Icons.Gift.Image):setCaption("Daily reward")
 	-- Codes is hidden until there are codes to give out (the user's call, 2026-10-07); CodesController still works.
 	local SHOW_CODES = false
 	if SHOW_CODES then
@@ -1131,7 +1035,7 @@ local function buildBreak(gui: Frame)
 		if running then
 			local picked = GameConfig.Tiers[attribute(forestState, "PickedTier")]
 			local left = endsAt - workspace:GetServerTimeNow()
-			countdown.Text = `Next forest in {UIStyle.clock(left)}`
+			countdown.Text = `Next bridge in {UIStyle.clock(left)}`
 				.. (if picked then `: {picked.Name}` else "")
 				.. `  ({math.ceil(left / 60)}/{GameConfig.Awakening.MaxBreakMinutes} MIN)`
 		end
@@ -1147,7 +1051,7 @@ local function buildBreak(gui: Frame)
 		local by = forestState:GetAttribute("PickedBy")
 		local world = GameConfig.Tiers[attribute(forestState, "PickedTier")]
 		if typeof(by) == "string" and world then
-			HUD.banner(`{by} picked {world.Name} for the next forest!`, Color3.fromRGB(170, 255, 140))
+			HUD.banner(`{by} picked {world.Name} for the next bridge!`, Color3.fromRGB(170, 255, 140))
 		end
 	end)
 	while true do
@@ -1241,6 +1145,19 @@ local function buildDevPanel(gui: ScreenGui)
 	add("Reset to new player", c.Red, fire("resetProfile", 0))
 	add("Replay tutorial intro", c.Blue, fire("restartTutorial", 0))
 	-- The starter quests (QuestController): back to quest 1, or on to the next (past the last = all done, then 1 again).
+	-- Your bridge count to the next rank's (after the top one, back to the first): to see each rank's hard hat and
+	-- title (2026-10-11).
+	add("Next rank", c.Gold, function()
+		local now = attribute(localPlayer, "ForestsCompleted")
+		local nextRank = GameConfig.Ranks[1]
+		for _, rank in GameConfig.Ranks do
+			if rank.Forests > now then
+				nextRank = rank
+				break
+			end
+		end
+		remote:FireServer("setForestsCompleted", nextRank.Forests)
+	end)
 	add("Restart quests", c.Blue, fire("setQuestIndex", 1))
 	add("Skip quest", c.Blue, function()
 		remote:FireServer("setQuestIndex", attribute(localPlayer, "QuestIndex") % (#GameConfig.Quests + 1) + 1)
@@ -1248,7 +1165,7 @@ local function buildDevPanel(gui: ScreenGui)
 	add("Extend break +1 min", c.Gold, fire("extendBreak", 1))
 	add("Pick Kyoto Forest", c.Gold, fire("pickWorld", 2))
 	add("End break", c.Gold, fire("endAwakening", 0))
-	add(`Fake buy +{GameConfig.BarBoosts[1].Seeds} seeds`, c.Purple, fire("buyBar", 1))
+	add(`Fake buy plank pack 1 ({GameConfig.BarBoosts[1].Share * 100}%)`, c.Purple, fire("buyBar", 1))
 	add("Fake server boost", c.Purple, fire("buyServerBoost", 0))
 	add("Clear boost passes", c.Purple, function()
 		remote:FireServer("grantStrengthBoost", 1)
@@ -1256,15 +1173,16 @@ local function buildDevPanel(gui: ScreenGui)
 	end)
 	add("Friend boost 20%", c.Purple, fire("setFriendBoost", 20))
 	add("Clear station passes", c.Red, fire("clearStationPasses", 0))
-	add("Clear Ranger pass", c.Red, fire("grantHands", 1)) -- this session only: back to the plain gnome
-	-- Hotkeys for filming in Freecam (Shift+P), which hides this panel: R fills the ring, F the forest.
+	add("Clear Builderman pass", c.Red, fire("grantHands", 1)) -- this session only: back to the plain gnome
+	-- Hotkeys for filming in Freecam (Shift+P), which hides this panel: R fills the ring, G the forest (F until 2026-10-11:
+	-- F now buys a character with coins at its NPC).
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if processed then
 			return
 		end
 		if input.KeyCode == Enum.KeyCode.R then
 			remote:FireServer("fillOpenRow", leave())
-		elseif input.KeyCode == Enum.KeyCode.F then
+		elseif input.KeyCode == Enum.KeyCode.G then
 			remote:FireServer("fillAll", leave())
 		end
 	end)

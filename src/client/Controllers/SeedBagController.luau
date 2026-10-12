@@ -83,7 +83,7 @@ local function build()
 	holder.Position = UDim2.new(0, 14, 1, -84) -- above the Friend Boost
 	holder.AutomaticSize = Enum.AutomaticSize.XY
 	holder.Parent = gui
-	UIStyle.autoScale(holder)
+	UIStyle.windowScale(holder)
 	UIStyle.list(holder, false, 8)
 
 	-- The bag's seeds (opens upward, above the button).

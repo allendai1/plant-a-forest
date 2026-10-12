@@ -29,14 +29,21 @@ export type Profile = {
 	BulkPickupLevel: number,
 	BulkPlantLevel: number,
 	PlantingRangeLevel: number,
+	LuckyPlanksLevel: number, -- Lucky Planks (2026-10-11)
 	SeedsPlanted: number, -- lifetime (M10: the tutorial step comes from it)
-	FreeGiftClaimed: number, -- 0 or 1
+	FreeGiftClaimed: number, -- 0 or 1: the free gift (like, favorite, join; EconomyService)
 	SpringGuideSeen: number, -- 1 once they've stood in the Ancient Spring (the first-break guide stops)
 	FirstTreeDone: number, -- 1 once they've finished a tree (the first one pays Economy.FirstTreeCoins)
 	QuestIndex: number, -- the starter quest they're on (GameConfig.Quests; past the end = all done)
 	TreesFinished: number, -- trees they planted the last acorn of, ever (a quest counts it)
 	RingsHelped: number, -- rings that finished while they'd planted in them, ever (a quest counts it)
-	GroupGiftClaimed: number, -- 0 or 1: joined the group at the group gift board (EconomyService)
+	GroupGiftClaimed: number, -- 0 or 1: the old group gift (unused since 2026-10-11: one free gift, FreeGiftClaimed)
+	LikeGiftClaimed: number, -- 0 or 1: the old like gift (unused since 2026-10-11: one free gift, FreeGiftClaimed)
+	EquippedHat: number, -- the rank hard hat picked in the Hats window (a GameConfig.Ranks index), 0 = the newest
+	DailyStreak: number, -- days in a row the daily reward was claimed (DailyService)
+	DailyLastDay: number, -- the UTC day number it was last claimed (GameConfig.dayOf), 0 = never
+	DailyGym: number, -- the best gym tier a daily reward unlocked (GameConfig.Daily.Gyms), 0 = none
+	CharacterBought: number, -- the highest GameConfig.HandsPasses index bought with coins, 0 = none (EconomyService)
 	StrengthBoostBought: number, -- the highest Strength boost bought (a developer product; 1 = none)
 	SpeedBoostBought: number, -- the highest Speed boost bought (1 = none)
 	WalkCap: number, -- the player's own walk speed limit (0 = none)
@@ -44,6 +51,7 @@ export type Profile = {
 	TutorialStep: number, -- 0 = story intro not seen, then GameConfig.Tutorial.Steps, DoneStep = finished
 	Music: number, -- the music setting: 1 = on, 0 = off (polish pass)
 	Effects: number, -- the sound effects setting: 1 = on, 0 = off
+	AutoBuildOn: number, -- the Auto Build pass's setting (2026-10-11): 1 = on, 0 = off (CarryService, CarryController)
 	PlayTimeSeconds: number, -- total time played, +PLAYTIME_STEP every PLAYTIME_STEP online (analytics)
 	Purchases: { string }, -- PurchaseIds of the last MAX_PURCHASES saved-data product receipts (GUI pass)
 	SeedBag: { [string]: number }, -- special seeds owned, by seed id (seed shop)
@@ -59,6 +67,7 @@ export type StatKey =
 	| "BulkPickupLevel"
 	| "BulkPlantLevel"
 	| "PlantingRangeLevel"
+	| "LuckyPlanksLevel"
 	| "SeedsPlanted"
 	| "FreeGiftClaimed"
 	| "SpringGuideSeen"
@@ -67,17 +76,24 @@ export type StatKey =
 	| "TreesFinished"
 	| "RingsHelped"
 	| "GroupGiftClaimed"
+	| "LikeGiftClaimed"
+	| "EquippedHat"
+	| "DailyStreak"
+	| "DailyLastDay"
+	| "DailyGym"
+	| "CharacterBought"
 	| "StrengthBoostBought"
 	| "SpeedBoostBought"
 	| "WalkCap"
 	| "GuideArrow"
 	| "Music"
 	| "Effects"
+	| "AutoBuildOn"
 	| "TutorialStep"
 	| "PlayTimeSeconds"
 	| "ShopRestock"
 
-local VERSION = 2 -- bump when a field is renamed or reshaped, and add a step to migrate()
+local VERSION = 3 -- bump when a field is renamed or reshaped, and add a step to migrate()
 local TEMPLATE: Profile = {
 	Version = VERSION,
 	Strength = 0,
@@ -87,6 +103,7 @@ local TEMPLATE: Profile = {
 	BulkPickupLevel = 0,
 	BulkPlantLevel = 0,
 	PlantingRangeLevel = 0,
+	LuckyPlanksLevel = 0,
 	SeedsPlanted = 0,
 	FreeGiftClaimed = 0,
 	SpringGuideSeen = 0,
@@ -95,12 +112,19 @@ local TEMPLATE: Profile = {
 	TreesFinished = 0,
 	RingsHelped = 0,
 	GroupGiftClaimed = 0,
+	LikeGiftClaimed = 0,
+	EquippedHat = 0,
+	DailyStreak = 0,
+	DailyLastDay = 0,
+	DailyGym = 0,
+	CharacterBought = 0,
 	StrengthBoostBought = 1,
 	SpeedBoostBought = 1,
 	WalkCap = 0,
 	GuideArrow = 1,
 	Music = 1,
 	Effects = 1,
+	AutoBuildOn = 1,
 	TutorialStep = 0,
 	PlayTimeSeconds = 0,
 	Purchases = {},
@@ -110,7 +134,7 @@ local TEMPLATE: Profile = {
 	RedeemedCodes = {},
 }
 -- Studio play sessions save to their own store, so tests never touch the real game's saves.
-local STORE_NAME = if RunService:IsStudio() then "PlayerData_Studio" else "PlayerData"
+local STORE_NAME = if RunService:IsStudio() then "CanyonData_Studio" else "CanyonData" -- a fresh start for the canyon game (was PlayerData, Plant Trees!)
 local LOAD_FAILED = "Couldn't load your data. Please rejoin."
 local SESSION_TAKEN = "Your data was opened on another server. Please rejoin."
 local MAX_PURCHASES = 50
@@ -124,13 +148,17 @@ local store = ProfileStore.New(STORE_NAME, TEMPLATE)
 local sessions: { [Player]: any } = {} -- the ProfileStore profile of each loaded player
 local profiles: { [Player]: Profile } = {} -- its Data table, which is what gets saved
 
--- Brings an older save up to VERSION, one step at a time. Nothing to migrate yet.
+-- Brings an older save up to VERSION, one step at a time.
 local function migrate(data: Profile)
 	if data.Version < 2 then
 		-- Planting Range went from 10 levels of +4 studs to 4 levels of +28 (one tree each) on 2026-10-09. Rounded up,
 		-- so nobody loses reach: old levels 1-7 become 1, 8-10 become 2.
 		data.PlantingRangeLevel =
 			math.min(math.ceil(data.PlantingRangeLevel * 4 / 28), GameConfig.Upgrades.PlantingRange.MaxLevel)
+	end
+	if data.Version < 3 and data.TutorialStep >= 6 then
+		-- The tutorial grew from 5 steps to 7 on 2026-10-11: step 6 was "finished" (or past the shop in older saves).
+		data.TutorialStep = GameConfig.Tutorial.DoneStep
 	end
 	data.Version = VERSION
 end
@@ -160,6 +188,8 @@ local function load(player: Player)
 		data.TutorialStep = GameConfig.Tutorial.DoneStep -- played before the tutorial had saved steps
 	elseif data.TutorialStep == 0 and not GameConfig.Features.TutorialIntro then
 		data.TutorialStep = 1 -- skip the story intro
+	elseif data.TutorialStep > GameConfig.Tutorial.DoneStep then
+		data.TutorialStep = GameConfig.Tutorial.DoneStep -- saved when the tutorial had more steps (7 until 2026-10-10)
 	end
 	session.OnSessionEnd:Connect(function()
 		sessions[player] = nil
@@ -290,7 +320,8 @@ end
 
 function DataService.init()
 	-- The Settings toggles: settings that only change saved data (1 = on, 0 = off).
-	local toggles: { [string]: StatKey } = { GuideArrow = "GuideArrow", Music = "Music", Effects = "Effects" }
+	local toggles: { [string]: StatKey } =
+		{ GuideArrow = "GuideArrow", Music = "Music", Effects = "Effects", AutoBuildOn = "AutoBuildOn" }
 	Remotes.event("SetSetting").OnServerEvent:Connect(function(player: Player, name: unknown, on: unknown)
 		local rate = GameConfig.Settings.Rate
 		local key: StatKey? = if typeof(name) == "string" then toggles[name] else nil

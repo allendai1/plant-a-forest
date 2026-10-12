@@ -1,33 +1,31 @@
 --!strict
--- Targeting: the open hexes within reach of a position, closest first (docs/plans/M4.md).
--- Shared by TargetController (the outline) and ForestService (overflow), so both pick the same hex.
--- Pure: callers pass the grid origin and an isOpen(q, r) check. Only the few rings of hexes around the
--- hex under the position are looked at, never the whole forest. Distances are flat (height ignored).
+-- Targeting: the open bridge slots within reach of a position, closest first (docs/plans/M4.md; bridge slots since
+-- 2026-10-10). Shared by TargetController (the outline) and ForestService (overflow), so both pick the same slot.
+-- Pure: callers pass the bridge frame and an isOpen(q, r) check. Only the slots around the one under the position
+-- are looked at, never the whole bridge. Distances are flat (height ignored).
 
-local HexGrid = require(script.Parent.HexGrid)
+local BridgeGrid = require(script.Parent.BridgeGrid)
+local GameConfig = require(script.Parent.GameConfig)
 
 export type Candidate = { q: number, r: number, distance: number }
 
 local Targeting = {}
 
-local SQRT3 = math.sqrt(3)
-
 function Targeting.openNear(
 	position: Vector3,
 	range: number,
-	hexSize: number,
-	origin: Vector3,
+	frame: CFrame,
 	isOpen: (q: number, r: number) -> boolean
 ): { Candidate }
-	local cq, cr = HexGrid.fromWorld(position, hexSize, origin)
-	local steps = math.ceil(range / (SQRT3 * hexSize)) + 1
+	local grid = GameConfig.Grid
+	local cq, cr = BridgeGrid.fromWorld(position, frame)
+	local steps = math.ceil(range / grid.SlotStuds) + 1
 	local found: { Candidate } = {}
-	for dq = -steps, steps do
-		for dr = math.max(-steps, -dq - steps), math.min(steps, -dq + steps) do
-			local q, r = cq + dq, cr + dr
+	for q = math.max(1, cq - steps), math.min(grid.Columns, cq + steps) do
+		for r = math.max(1, cr - steps), math.min(grid.Rows, cr + steps) do
 			if isOpen(q, r) then
-				local center = HexGrid.toWorld(q, r, hexSize, origin)
-				-- Rounded to a thousandth of a stud: Roblox vectors are 32-bit, so hexes that are exactly the
+				local center = BridgeGrid.toWorld(q, r, frame)
+				-- Rounded to a thousandth of a stud: Roblox vectors are 32-bit, so slots that are exactly the
 				-- same distance away would otherwise differ in the last digits and the tie-break wouldn't apply.
 				local distance = math.round(Vector2.new(center.X - position.X, center.Z - position.Z).Magnitude * 1000) / 1000
 				if distance <= range then
@@ -48,18 +46,16 @@ function Targeting.openNear(
 	return found
 end
 
--- Is the plot at (q, r) in `ring` open for planting? Shared by ForestService (the check) and ForestController (the
--- glowing rims), so both agree. The open ring always is (openRing 0 = none: the forest is done). Since 2026-10-09
--- (the user's two-rings idea) so is a plot up to `aheadRings` rings past it, once the tree just outside it (its
--- neighbor one ring back toward the open ring) is full grown: the forest creeps on behind finished trees.
--- `grown(q, r)` says whether the plot there is full grown (false for no plot). Full plots are never open.
+-- Is the slot at (q, r) in row `ring` open for planks? Shared by ForestService (the check) and BridgeController (the
+-- ghost outlines), so both agree. The open row always is (openRing 0 = none: the bridge is done). So is a slot up to
+-- `aheadRings` rows past it, once the slot behind it is finished: the bridge creeps out behind finished slots.
+-- `grown(q, r)` says whether the slot there is finished (false for no slot). Finished slots are never open.
 function Targeting.isOpenPlot(
 	q: number,
 	r: number,
 	ring: number,
 	full: boolean,
 	openRing: number,
-	outsideIn: boolean,
 	aheadRings: number,
 	grown: (q: number, r: number) -> boolean
 ): boolean
@@ -69,17 +65,11 @@ function Targeting.isOpenPlot(
 	if ring == openRing then
 		return true
 	end
-	local step = if outsideIn then -1 else 1 -- the way the rings open
-	local ahead = (ring - openRing) * step
+	local ahead = ring - openRing
 	if ahead < 1 or ahead > aheadRings then
 		return false
 	end
-	for _, n in HexGrid.neighbors(q, r) do
-		if HexGrid.distance(n.q, n.r, 0, 0) == ring - step and grown(n.q, n.r) then
-			return true
-		end
-	end
-	return false
+	return grown(BridgeGrid.behind(q, r))
 end
 
 return Targeting

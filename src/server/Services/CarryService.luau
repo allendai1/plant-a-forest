@@ -6,6 +6,8 @@
 -- Every grab re-checks reach and capacity, and grabs are never closer together than the player's pace
 -- (HoldRepeatSeconds, faster with a Hands pass), so tapping fast is no quicker than holding.
 -- DropSeeds (Q) empties your hands, anywhere (lobby only until 2026-10-08).
+-- Auto Build pass owners (AutoBuild attribute, PassService) pick up without holding E: while they stand within a pile's
+-- reach with room to carry, one loop grabs for them at their usual pace (2026-10-11).
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -63,9 +65,16 @@ local function inReach(player: Player, rack: Instance): boolean
 	if not (humanoid and humanoid.Health > 0 and root and root:IsA("BasePart")) then
 		return false
 	end
-	-- Measured from the rack's middle (the dispenser tower), the same spot its prompt is measured from.
-	local center = if rack:IsA("Model") then rack:GetPivot().Position elseif rack:IsA("BasePart") then rack.Position else nil
-	return center ~= nil and (root.Position - center).Magnitude <= GameConfig.Planting.RackRangeStuds
+	-- Measured like the prompt itself, so wherever the prompt shows, a grab works (any shape or size of pile).
+	local prompt = rack:FindFirstChildWhichIsA("ProximityPrompt", true)
+	local spot = prompt and prompt.Parent
+	local at = if spot and spot:IsA("Attachment")
+		then spot.WorldPosition
+		elseif spot and spot:IsA("BasePart") then spot.Position
+		else nil
+	return prompt ~= nil
+		and at ~= nil
+		and (root.Position - at).Magnitude <= prompt.MaxActivationDistance + GameConfig.Planting.RackSlackStuds
 end
 
 -- One grab. Returns whether holding should keep repeating.
@@ -131,6 +140,26 @@ local function hookRack(rack: Instance)
 	end
 end
 
+-- Auto Build: grabs for every pass owner standing at a pile, at their own pace (grab() checks the pace, reach and room).
+local function autoCollect()
+	local racks = CollectionService:GetTagged(RACK_TAG)
+	while true do
+		for player, holder in holders do
+			-- The pass, with its Settings switch on (AutoBuildOn).
+			if player:GetAttribute("AutoBuild") == true and player:GetAttribute("AutoBuildOn") ~= 0 and not holder.holding then
+				for _, rack in racks do
+					if inReach(player, rack) then
+						grab(player, rack)
+						break
+					end
+				end
+			end
+		end
+		task.wait(GameConfig.AutoBuild.CheckSeconds)
+		racks = CollectionService:GetTagged(RACK_TAG)
+	end
+end
+
 local function onDrop(player: Player)
 	local rate = GameConfig.Drop.Rate
 	if not Guard.allow(player, "DropSeeds", rate.PerSecond, rate.Burst) then
@@ -164,6 +193,7 @@ function CarryService.init()
 	end
 	CollectionService:GetInstanceAddedSignal(RACK_TAG):Connect(hookRack)
 	Remotes.event("DropSeeds").OnServerEvent:Connect(onDrop)
+	task.spawn(autoCollect)
 end
 
 return CarryService

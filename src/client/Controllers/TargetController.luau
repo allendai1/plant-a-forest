@@ -1,5 +1,6 @@
 --!strict
--- TargetController: the local player's planting target (docs/plans/M4.md). Only you see your own.
+-- TargetController: the local player's planting target (docs/plans/M4.md). Only you see your own. Since 2026-10-10
+-- the targets are bridge slots (BridgeController): a square outline, and a see-through plank where your next one goes.
 -- Every frame: the closest open plot in range (the mouse doesn't choose; the user's call, 2026-10-07),
 -- shown with a pulsing outline, a glowing fill over the tile and a bobbing arrow above it that shows
 -- through trees (all gold when your next press finishes the tree), and a progress bar under the tree.
@@ -25,20 +26,21 @@ local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
 local Targeting = require(Shared.Targeting)
 local Trees = require(Shared.Trees)
-local ForestController = require(script.Parent.ForestController)
+local BridgeController = require(script.Parent.BridgeController)
 local SeedBagController = require(script.Parent.SeedBagController)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
 -- Look of the indicator (visual only).
-local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
-local FINISH_COLOR = Color3.fromRGB(255, 200, 40)
+-- Green like Build the Pyramid's block placement (2026-10-10, the user's pick; was white, and yellow when the press
+-- finishes the slot). One color either way now.
+local OUTLINE_COLOR = Color3.fromRGB(110, 240, 110)
+local FINISH_COLOR = OUTLINE_COLOR
 local REFUSED_COLOR = Color3.fromRGB(255, 70, 70)
-local OUTLINE_SCALE = 1.06
-local OUTLINE_LIFT = 0.3 -- raised a little above the tile's own rim height so it shows over the slab
-local OUTLINE_THICK = 1.6 -- the outline is this much taller than the tile's rim
-local FILL_SCALE = 0.97 -- the glowing fill covers this much of the tile
-local FILL_TOP = 1.5 -- the fill's top, above the tile's base (the grass border is at 1.35)
-local FILL_TRANSPARENCY = NumberRange.new(0.5, 0.75) -- the fill pulses between these
+local OUTLINE_SCALE = 1.04
+local OUTLINE_THICK = 0.6 -- the outline box's height, centered on the deck
+local FILL_SCALE = 0.97 -- the glowing fill covers this much of the slot
+local FILL_TOP = 0.15 -- the fill's top, above the deck
+local FILL_TRANSPARENCY = NumberRange.new(0.78, 0.9) -- the fill pulses between these (faint for the green: the edges lead)
 local PULSE_SPEED = 5 -- radians per second
 local ARROW_HEIGHT = 13 -- the bobbing arrow floats this far above the tile
 local METER_SIZE = Vector2.new(110, 14) -- the progress bar, in pixels
@@ -57,23 +59,17 @@ local GUIDE_TEXTURE = "rbxassetid://119862567044814"
 local GUIDE_SPACING = 7
 local GUIDE_SPEED = -1 -- texture lengths per second; negative moves toward Attachment0 (the plot)
 local NEAREST_SECONDS = 0.25
-local REACH_COLOR = Color3.fromRGB(255, 255, 255) -- the plots in planting range (showReach)
-local REACH_TRANSPARENCY = 0.82
--- A see-through tree on an empty target while you carry acorns, showing what you'd plant and where, like Build the
--- Pyramid's block preview (2026-10-09, the user's idea): this world's first Common tree at this growth stage.
-local PREVIEW_STAGE = 1
--- A black ghost with a black outline, so it can't pass for a real sapling (it did in its first, tree-colored version).
-local PREVIEW_COLOR = Color3.fromRGB(0, 0, 0) -- black (was white; the user's call, 2026-10-09)
-local PREVIEW_OUTLINE = Color3.fromRGB(0, 0, 0) -- black and fully opaque (was white; the user's call, 2026-10-09)
-local PREVIEW_TRANSPARENCY = 0.4 -- 0.6 looked too faint (the user's call, 2026-10-09)
-local PREVIEW_LIFT = 1.2 -- the slab's top, where trees stand
+-- A see-through plank where your next one lands while you carry planks, like Build the Pyramid's block preview (the
+-- forest's see-through sapling, 2026-10-09, the user's idea). Black, so it can't pass for a real plank.
+local PREVIEW_COLOR = Color3.fromRGB(0, 0, 0)
+local PREVIEW_TRANSPARENCY = 0.4
 
 local TargetController = {}
 
 local localPlayer = Players.LocalPlayer
-local target: ForestController.Plot? = nil
-local outline: BasePart
-local outlineHeight = 0 -- the rim's center height above the tile's base
+local target: BridgeController.Plot? = nil
+local outline: BasePart -- invisible; its SelectionBox (outlineBox) draws the square
+local outlineBox: SelectionBox
 local fill: BasePart
 local arrowGui: BillboardGui
 local arrowText: TextLabel
@@ -84,14 +80,14 @@ local guideTo: Attachment
 local guideBeam: Beam
 local guideTurn = CFrame.identity -- how the arrow texture's attachments are turned to lie flat
 local marker: BasePart
-local nearest: ForestController.Plot? = nil
+local nearest: BridgeController.Plot? = nil
 local guideTarget: Vector3? = nil -- set by the tutorial: lead the arrow here instead
-local lastPlanted: ForestController.Plot? = nil -- where you last planted (CarryController tells us)
-local HUB_RADIUS = 160 -- out past this from the World Tree (the forest), empty hands get an arrow to a dispenser
+local lastPlanted: BridgeController.Plot? = nil -- where you last planted (CarryController tells us)
+local HUB_RADIUS = 160 -- out past this from the hub's center (on the bridge), empty hands get an arrow to a dispenser
 local nearestRack: Vector3? = nil
 local lastNearest = 0
 
-function TargetController.getTarget(): ForestController.Plot?
+function TargetController.getTarget(): BridgeController.Plot?
 	return target
 end
 
@@ -106,19 +102,19 @@ function TargetController.canPlantSpecial(): boolean
 end
 
 -- An open plot you can plant into: with a special seed in hand, only Common ones.
-local function plantable(plot: ForestController.Plot): boolean
-	return ForestController.isOpenPlot(plot) and not (SeedBagController.held() and Trees.isSpecial(plot.species))
+local function plantable(plot: BridgeController.Plot): boolean
+	return BridgeController.isOpenPlot(plot) and not (SeedBagController.held() and Trees.isSpecial(plot.species))
 end
 
 local function plantableAt(q: number, r: number): boolean
-	local plot = ForestController.plotAt(q, r)
+	local plot = BridgeController.plotAt(q, r)
 	return plot ~= nil and plantable(plot)
 end
 
 -- The tutorial (M10) points the guide arrow at a spot on the ground (an acorn pile, the training pad,
 -- the shop), or gives it back with nil.
 -- CarryController: a plant request went to this plot.
-function TargetController.notePlanted(plot: ForestController.Plot)
+function TargetController.notePlanted(plot: BridgeController.Plot)
 	lastPlanted = plot
 end
 
@@ -142,17 +138,17 @@ end
 
 local inReach: { Targeting.Candidate } = {} -- every open plot in planting range this frame (showReach)
 
-local function chooseTarget(root: BasePart): ForestController.Plot?
-	local found = Targeting.openNear(root.Position, rangeStuds(), GameConfig.Grid.HexSize, ForestController.center(), plantableAt)
+local function chooseTarget(root: BasePart): BridgeController.Plot?
+	local found = Targeting.openNear(root.Position, rangeStuds(), BridgeController.frame(), plantableAt)
 	inReach = found
 	local first = found[1]
-	return if first then ForestController.plotAt(first.q, first.r) else nil
+	return if first then BridgeController.plotAt(first.q, first.r) else nil
 end
 
-local function nearestOpen(position: Vector3): ForestController.Plot?
-	local best: ForestController.Plot? = nil
+local function nearestOpen(position: Vector3): BridgeController.Plot?
+	local best: BridgeController.Plot? = nil
 	local bestDistance = math.huge
-	for _, plot in ForestController.allPlots() do
+	for _, plot in BridgeController.allPlots() do
 		if plantable(plot) then
 			local distance = flatDistance(position, plot.base)
 			if distance < bestDistance then
@@ -183,21 +179,16 @@ local function build()
 	folder.Name = "TargetIndicator"
 	folder.Parent = workspace
 
-	local rim =
-		ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Tiles"):WaitForChild("HexTile"):WaitForChild("HexTile_Rim") :: BasePart
-	outline = rim:Clone()
-	outline.Name = "Outline"
-	local scale = GameConfig.Grid.HexSize / 16 -- the Blender tile was modeled for HexSize 16
-	outline.Size = rim.Size * scale * Vector3.new(OUTLINE_SCALE, OUTLINE_THICK, OUTLINE_SCALE)
-	outlineHeight = rim.CFrame.Position.Y * scale
-	outline.Material = Enum.Material.Neon
-	outline.Color = OUTLINE_COLOR
-	outline.Anchored = true
-	outline.CanCollide = false
-	outline.CanQuery = false
-	outline.CastShadow = false
+	local slot = GameConfig.Grid.SlotStuds
+	outline = makePart("Outline", Vector3.new(slot * OUTLINE_SCALE, OUTLINE_THICK, slot * OUTLINE_SCALE), OUTLINE_COLOR, folder)
 	outline.Transparency = 1
-	outline.Parent = folder
+	outlineBox = Instance.new("SelectionBox")
+	outlineBox.Adornee = outline
+	outlineBox.LineThickness = 0.25
+	outlineBox.SurfaceTransparency = 1
+	outlineBox.Color3 = OUTLINE_COLOR
+	outlineBox.Visible = false
+	outlineBox.Parent = outline
 	-- The tree's progress: a slim bar low on the tile, under the tree (2026-10-09, the user's ask; was a "12 / 40"
 	-- label up at 7 studs). The label only shows text while holding a special seed.
 	local gui = Instance.new("BillboardGui")
@@ -224,15 +215,9 @@ local function build()
 	meterFill.Parent = meter
 	UIStyle.corner(meterFill, METER_SIZE.Y // 2)
 
-	-- The glowing fill: a thin copy of the tile's slab laid over the tile.
-	local slab = (rim.Parent :: Instance):FindFirstChild("HexTile_Slab") :: BasePart
-	fill = slab:Clone()
-	fill.Name = "Fill"
-	fill.Size = Vector3.new(slab.Size.X * scale * FILL_SCALE, 0.2, slab.Size.Z * scale * FILL_SCALE)
-	fill.Material = Enum.Material.Neon
-	fill.Anchored, fill.CanCollide, fill.CanQuery, fill.CanTouch, fill.CastShadow = true, false, false, false, false
+	-- The glowing fill laid over the slot.
+	fill = makePart("Fill", Vector3.new(slot * FILL_SCALE, 0.2, slot * FILL_SCALE), OUTLINE_COLOR, folder)
 	fill.Transparency = 1
-	fill.Parent = folder
 	-- The arrow above the target, seen through trees.
 	arrowGui = Instance.new("BillboardGui")
 	arrowGui.Name = "TargetArrow"
@@ -297,65 +282,33 @@ local function build()
 	markerText.Parent = markerGui
 end
 
-local preview: Model? = nil
-local previewOf: Model? = nil -- the template it was copied from (a new world or the next stage changes it)
+local preview: BasePart? = nil
 
--- Empty tile: a sapling at its center. Started tree (2026-10-09, the user's ask): its next growth stage, where and
--- as big as the real tree will stand, so you see what your acorns grow it into. Full grown: nothing.
-local function showPreview(plot: ForestController.Plot?, seedsPerHex: number)
+-- The plank your next press adds to the slot, see-through, while you carry planks. Nothing on a full slot.
+local function showPreview(plot: BridgeController.Plot?)
 	local carried = localPlayer:GetAttribute("Carried")
 	local show = plot ~= nil and typeof(carried) == "number" and carried > 0 and not SeedBagController.held()
-	local template: Model? = nil
-	if show and plot then
-		local stage = GameConfig.growthStage(plot.seeds, seedsPerHex)
-		if stage == 0 then
-			template = ForestController.previewTemplate(PREVIEW_STAGE, 0)
-		elseif stage < #GameConfig.Growth.StageStarts then
-			template = ForestController.previewTemplate(stage + 1, plot.species)
-		end
-	end
-	if template ~= previewOf then
+	local nextPlank = if show and plot then BridgeController.nextPlank(plot) else 0
+	if nextPlank == 0 or not plot then
 		if preview then
-			preview:Destroy()
-			preview = nil
+			preview.Transparency = 1
 		end
-		previewOf = template
-		if template then
-			local model = template:Clone()
-			for _, part in model:GetDescendants() do
-				if part:IsA("BasePart") then
-					part.Anchored = true
-					part.CanCollide, part.CanQuery, part.CanTouch = false, false, false
-					part.CastShadow = false
-					part.Transparency = PREVIEW_TRANSPARENCY
-					part.Color = PREVIEW_COLOR
-					part.Material = Enum.Material.SmoothPlastic
-				end
-			end
-			local edge = Instance.new("Highlight")
-			edge.FillTransparency = 1
-			edge.OutlineColor = PREVIEW_OUTLINE
-			edge.OutlineTransparency = 0
-			edge.DepthMode = Enum.HighlightDepthMode.Occluded
-			edge.Parent = model
-			model.Parent = fill.Parent
-			preview = model
-		end
+		return
 	end
-	if preview and plot then
-		local size = if plot.seeds == 0 then 1 else plot.treeSize
-		if preview:GetScale() ~= size then
-			preview:ScaleTo(size)
-		end
-		preview:PivotTo(if plot.seeds == 0 then CFrame.new(plot.base + Vector3.new(0, PREVIEW_LIFT, 0)) else plot.treePivot)
-	end
+	local ghost = preview or makePart("Preview", Vector3.one, PREVIEW_COLOR, fill.Parent :: Instance)
+	ghost.Material = Enum.Material.SmoothPlastic
+	preview = ghost
+	local cframe, size = BridgeController.plankAt(plot, nextPlank)
+	ghost.Size = size
+	ghost.CFrame = cframe
+	ghost.Transparency = PREVIEW_TRANSPARENCY
 end
 
-local function showTarget(plot: ForestController.Plot?)
+local function showTarget(plot: BridgeController.Plot?)
 	local gui = meter:FindFirstAncestorOfClass("BillboardGui")
 	if not plot then
-		showPreview(nil, 0)
-		outline.Transparency = 1
+		showPreview(nil)
+		outlineBox.Visible = false
 		fill.Transparency = 1
 		arrowGui.Enabled = false
 		if gui then
@@ -365,13 +318,13 @@ local function showTarget(plot: ForestController.Plot?)
 	end
 	local perHex = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("SeedsPerHex")
 	local seedsPerHex = if typeof(perHex) == "number" then perHex else GameConfig.Tiers[1].SeedsPerHex
-	showPreview(plot, seedsPerHex)
+	showPreview(plot)
 	local carried = localPlayer:GetAttribute("Carried")
 	local press = math.min(upgradeValue("BulkPlant"), if typeof(carried) == "number" then carried else 0)
 	local finishes = plot.seeds + math.max(press, 1) >= seedsPerHex
-	outline.CFrame = CFrame.new(plot.base + Vector3.new(0, outlineHeight + OUTLINE_LIFT, 0))
+	outline.CFrame = plot.frame
 	outline.Color = if finishes then FINISH_COLOR else OUTLINE_COLOR
-	outline.Transparency = 0
+	outlineBox.Visible = true
 	meter.Text = ""
 	meterFill.Visible = true
 	meterFill.Size = UDim2.fromScale(math.clamp(plot.seeds / seedsPerHex, 0, 1), 1)
@@ -384,14 +337,16 @@ local function showTarget(plot: ForestController.Plot?)
 		meter.Text = if allowed then `Plant {def.DisplayName}` else `{GameConfig.SeedShop.PerForestLimit} per forest`
 	end
 	if gui then
-		gui.Enabled = true
+		-- No bar when one plank fills a section (a solo server; the user's call, 2026-10-10): it'd only ever be empty.
+		gui.Enabled = seedsPerHex > 1 or def ~= nil
 	end
 	-- Fill and arrow in the outline's color, pulsing and bobbing so the target reads at a glance.
 	local wave = (math.sin(os.clock() * PULSE_SPEED) + 1) / 2
-	fill.CFrame = CFrame.new(plot.base + Vector3.new(0, FILL_TOP - fill.Size.Y / 2, 0))
+	fill.CFrame = plot.frame * CFrame.new(0, FILL_TOP - fill.Size.Y / 2, 0)
 	fill.Color = outline.Color
 	fill.Transparency = FILL_TRANSPARENCY.Min + (FILL_TRANSPARENCY.Max - FILL_TRANSPARENCY.Min) * wave
-	outline.Transparency = 0.25 * wave
+	outlineBox.Color3 = outline.Color
+	outlineBox.Transparency = 0.25 * wave
 	arrowText.TextColor3 = outline.Color
 	arrowGui.StudsOffsetWorldSpace = Vector3.new(0, ARROW_HEIGHT + ARROW_BOB * wave, 0)
 	arrowGui.Enabled = true
@@ -423,36 +378,62 @@ local function showGuide(root: BasePart?, spot: Vector3?)
 	end
 end
 
--- Every other open plot you could plant into from where you stand, faintly lit while you carry acorns (2026-10-09):
--- each Planting Range level reaches one more tree, and this shows it. Copies of the target's fill, pooled.
+-- The other slots your next press fills, lit like the target (2026-10-10, the user's call; every open slot in planting
+-- range was faintly lit until then): Bulk Plant's planks past the target overflow into the next-closest open slots,
+-- in the server's order (ForestService onPlantSeeds). Copies of the target's fill and outline, pooled.
 local reachParts: { BasePart } = {}
+local reachOutlines: { SelectionBox } = {}
 local function showReach(on: boolean)
 	local count = 0
-	local list: { Targeting.Candidate } = if on then inReach else {}
-	for _, candidate in list do
-		local plot = ForestController.plotAt(candidate.q, candidate.r)
-		if plot and plot ~= target then
+	local perHex = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("SeedsPerHex")
+	local seedsPerHex = if typeof(perHex) == "number" then perHex else GameConfig.Tiers[1].SeedsPerHex
+	local remaining = if on and target and not SeedBagController.held()
+		then math.min(upgradeValue("BulkPlant"), attribute("Carried")) - math.max(seedsPerHex - target.seeds, 0)
+		else 0
+	for _, candidate in inReach do
+		if remaining <= 0 then
+			break
+		end
+		local plot = BridgeController.plotAt(candidate.q, candidate.r)
+		if plot and plot ~= target and plot.seeds < seedsPerHex then
+			remaining -= seedsPerHex - plot.seeds
 			count += 1
 			local part: BasePart = reachParts[count] or fill:Clone()
 			if not reachParts[count] then
 				part.Name = "Reach"
-				part.Color = REACH_COLOR
 				part.Parent = fill.Parent
 				reachParts[count] = part
 			end
-			part.Transparency = REACH_TRANSPARENCY
-			part.CFrame = CFrame.new(plot.base + Vector3.new(0, FILL_TOP - part.Size.Y / 2, 0))
+			part.Color, part.Transparency = fill.Color, fill.Transparency -- pulsing with the target
+			part.CFrame = plot.frame * CFrame.new(0, FILL_TOP - part.Size.Y / 2, 0)
+			local box = reachOutlines[count]
+			if not box then
+				local holder = outline:Clone()
+				holder.Name = "ReachOutline"
+				for _, child in holder:GetChildren() do
+					if not child:IsA("SelectionBox") then
+						child:Destroy() -- the target's own arrow and bar ride on its outline part
+					end
+				end
+				holder.Parent = outline.Parent
+				box = holder:FindFirstChildOfClass("SelectionBox") :: SelectionBox
+				box.Adornee = holder
+				reachOutlines[count] = box
+			end
+			(box.Adornee :: BasePart).CFrame = plot.frame
+			box.Color3, box.Transparency, box.Visible = outlineBox.Color3, outlineBox.Transparency, true
 		end
 	end
 	for i = count + 1, #reachParts do
 		reachParts[i].Transparency = 1
+		reachOutlines[i].Visible = false
 	end
 end
 
 local function step()
 	local character = localPlayer.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not ForestController.ready() or not (root and root:IsA("BasePart")) then
+	if not BridgeController.ready() or not (root and root:IsA("BasePart")) then
 		target = nil
 		showReach(false)
 		showTarget(nil)
@@ -460,10 +441,11 @@ local function step()
 		return
 	end
 	target = chooseTarget(root)
-	showTarget(target)
-
 	local carried = localPlayer:GetAttribute("Carried")
 	local carrying = typeof(carried) == "number" and carried > 0 or SeedBagController.held() ~= nil
+	-- The target's outline, glow and arrow only while you have planks to place (2026-10-10, the user's call: they showed
+	-- with empty hands too).
+	showTarget(if carrying then target else nil)
 	showReach(carrying)
 	local arrowOn = localPlayer:GetAttribute("GuideArrow") ~= 0 -- it can be turned off in Settings
 	if arrowOn and guideTarget then
@@ -477,7 +459,7 @@ local function step()
 		end
 		local plot = nearest
 		showGuide(root, if plot then plot.base else nil)
-	elseif arrowOn and not carrying and flatDistance(root.Position, ForestController.center()) > HUB_RADIUS then
+	elseif arrowOn and not carrying and flatDistance(root.Position, BridgeController.center()) > HUB_RADIUS then
 		-- Out in the forest with empty hands: back to the nearest acorn dispenser.
 		if os.clock() - lastNearest >= NEAREST_SECONDS then
 			lastNearest = os.clock()

@@ -6,7 +6,8 @@
 -- under the Speed stat (2026-10-07); the box since the same day; the slider replaced - / + / MAX on 2026-10-08.
 -- Guide arrow: shows or hides the arrow that leads to the nearest open plot, and the tutorial's.
 -- Music and Sound effects (polish pass): mute the Music or Effects SoundGroup (Sounds).
--- The three toggles are saved through SetSetting (the GuideArrow / Music / Effects attributes: 1 on, 0 off).
+-- The toggles are saved through SetSetting (the GuideArrow / Music / Effects / AutoBuildOn attributes: 1 on, 0 off).
+-- Auto Build's switch (2026-10-11) shows only to owners of its pass (the AutoBuild attribute).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -227,7 +228,7 @@ function SettingsController.start()
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
 	holder.Parent = screen
-	UIStyle.autoScale(holder)
+	UIStyle.windowScale(holder, 1.25) -- 25% bigger than the HUD's scale on computers (2026-10-11, the user: a bit small)
 	local panel = UIStyle.panel(holder)
 	panel.Name = "Panel"
 	panel.Size = UDim2.fromScale(1, 0)
@@ -238,11 +239,18 @@ function SettingsController.start()
 	UIStyle.closeButton(holder, SettingsController.toggle)
 
 	local refreshWalk = buildWalkSpeed(panel)
-	buildToggle(panel, 3, "GuideArrow", "Guide arrow", "Points to the nearest open plot")
+	buildToggle(panel, 3, "GuideArrow", "Guide arrow", "Points to the nearest open section")
 	buildToggle(panel, 4, "Music", "Music", "Background music")
 	buildToggle(panel, 5, "Effects", "Sound effects", "Clicks, coins, footsteps and more")
+	buildToggle(panel, 6, "AutoBuildOn", "Auto Build", "Picks up and places planks for you")
+	local autoRow = (panel:FindFirstChild("AutoBuildOn", true) :: GuiObject).Parent :: GuiObject
+	local function showAutoRow()
+		autoRow.Visible = localPlayer:GetAttribute("AutoBuild") == true
+	end
+	localPlayer:GetAttributeChangedSignal("AutoBuild"):Connect(showAutoRow)
+	showAutoRow()
 	-- The server's published place version (0 in Studio), to spot an outdated server (2026-10-09, the user's ask).
-	UIStyle.text(panel, `Version {game.PlaceVersion}`, 16, UIStyle.GREY).LayoutOrder = 6
+	UIStyle.text(panel, `Version {game.PlaceVersion}`, 16, UIStyle.GREY).LayoutOrder = 7
 	for _, name in { "Speed", "WalkCap" } do
 		localPlayer:GetAttributeChangedSignal(name):Connect(refreshWalk)
 	end

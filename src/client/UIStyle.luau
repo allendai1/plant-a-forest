@@ -8,6 +8,7 @@
 -- card() the shared shop card, short() writes big numbers as 1.2K / 3.4M.
 
 local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
@@ -47,20 +48,27 @@ export type Icon = { Image: string, Emoji: string }
 
 -- Placeholder icons: send the asset ids and set Image.
 UIStyle.Icons = {
-	Coins = { Image = "rbxassetid://98949249976360", Emoji = "💰" },
+	AutoBuild = { Image = "rbxassetid://95722617073124", Emoji = "🤖" }, -- BuilderBot's head over a plank (decal 108593281806783)
+	LuckyPlanks = { Image = "rbxassetid://72208787359977", Emoji = "🍀" }, -- a plank with a four-leaf clover (decal 103889402964053)
+	Coins = { Image = "rbxassetid://120701548196867", Emoji = "💰" }, -- the user's coin since 2026-10-10 (was 98949249976360)
 	Speed = { Image = "rbxassetid://111362551254873", Emoji = "⚡" },
 	Strength = { Image = "rbxassetid://128313204943236", Emoji = "💪" },
-	Forests = { Image = "rbxassetid://82377814437587", Emoji = "🌳" }, -- the user's "forest-icon" (was 137125846833438)
+	Forests = { Image = "rbxassetid://81841018627713", Emoji = "🌉" }, -- bridges built: the user's bridge icon (2026-10-10; was the forest icon 82377814437587)
 	Friends = { Image = "rbxassetid://15403044988", Emoji = "👥" }, -- the user's pick: Creator Store decal 15403045010
 	Shop = { Image = "rbxassetid://120542083299834", Emoji = "🛒" }, -- the user's "Red Shopping Cart" (was a basket)
-	ServerBoost = { Image = "", Emoji = "🚀" },
+	ServerBoost = { Image = "rbxassetid://72382428722597", Emoji = "🚀" }, -- a cartoon rocket (decal 116170853967272)
 	Settings = { Image = "rbxassetid://77572487902863", Emoji = "⚙️" }, -- the user's "Settings White" (was 80167634570686)
 	Codes = { Image = "", Emoji = "🎟️" },
-	Ranger = { Image = "", Emoji = "🤠" },
-	Lord = { Image = "", Emoji = "👑" },
-	BulkPickup = { Image = "rbxassetid://120369441988104", Emoji = "🌰" }, -- the user's pick
-	BulkPlant = { Image = "rbxassetid://140485439494131", Emoji = "🌱" }, -- the user's pick
-	PlantingRange = { Image = "rbxassetid://134531632884543", Emoji = "🎯" }, -- the user's pick
+	-- The free gift's box (the user's pick, Creator Store decal 15403372742, GiftsController), also the Daily button's.
+	Gift = { Image = "rbxthumb://type=Asset&id=15403372742&w=420&h=420", Emoji = "🎁" },
+	Ranger = { Image = "", Emoji = "👷" }, -- the character pass's card (Builderman since 2026-10-10; was the Ranger's 🤠)
+	Lord = { Image = "", Emoji = "🔨" }, -- the 2nd pass's card: the God of Hammers since 2026-10-11 (was 👑)
+	-- Planks since 2026-10-11 (the user's ask; tools/make_ui_icons.py shop_icons, decals 98337605399520 /
+	-- 95487894154939 / 87134502879825). They were the user's acorn picks 120369441988104 / 140485439494131 /
+	-- 134531632884543.
+	BulkPickup = { Image = "rbxassetid://125636553906762", Emoji = "🪵" }, -- a stack of planks
+	BulkPlant = { Image = "rbxassetid://139565934880563", Emoji = "🔨" }, -- a laid deck
+	PlantingRange = { Image = "rbxassetid://135184821949647", Emoji = "🎯" }, -- a plank on a ring
 	Restock = { Image = "", Emoji = "⏰" },
 	Trophy = { Image = "", Emoji = "🏆" },
 } :: { [string]: Icon }
@@ -68,7 +76,9 @@ UIStyle.Icons = {
 local SHADOW_DROP = 0.1 -- how far the shadow sits below the text, as a fraction of the text size (0.14 until 2026-10-07: too thick)
 UIStyle.THIN_DROP = 0.07 -- a lighter shadow: the Forest Bar number and the map's signs (the user's request)
 local SHADOW_TRANSPARENCY = 0.2
-local SCALED_STROKE = 0.1 -- outline of TextScaled labels (StrokeSizingMode ScaledSize)
+-- Outline of TextScaled labels (StrokeSizingMode ScaledSize): 0.05 since 2026-10-11 (the user, next to Build the
+-- Pyramid's UPGRADES sign: 0.1, then 0.07, still looked thick; the shadow's own outline adds to the bottom edge).
+local SCALED_STROKE = 0.05
 -- Properties the two copies take from the label.
 local MIRRORED = {
 	"Text",
@@ -243,6 +253,27 @@ function UIStyle.dropShadow(label: TextLabel | TextButton, stroke: number?, flat
 	label.Changed:Connect(mirror)
 end
 
+-- A top-to-bottom gradient on a dropShadow label's face (or on a "Face" label itself), lighter at the top and deeper
+-- at the bottom, from the label's own color unless `top`/`bottom` are given: Build the Pyramid's sign text
+-- (2026-10-11, the user). The color moves into the gradient (the text turns white, which the gradient tints); the
+-- original is kept in the GradientBase attribute, so calling it again is safe.
+function UIStyle.textGradient(label: TextLabel, top: Color3?, bottom: Color3?)
+	local face = if label.Name == "Face" then label else label:FindFirstChild("Face")
+	if not (face and face:IsA("TextLabel")) then
+		return
+	end
+	local saved = label:GetAttribute("GradientBase")
+	local base = if typeof(saved) == "Color3" then saved else label.TextColor3
+	label:SetAttribute("GradientBase", base)
+	label.TextColor3 = UIStyle.WHITE
+	face.TextColor3 = UIStyle.WHITE
+	local gradient = face:FindFirstChild("TextGradient") or Instance.new("UIGradient")
+	gradient.Name = "TextGradient"
+	gradient.Color = ColorSequence.new(top or base:Lerp(UIStyle.WHITE, 0.45), bottom or base:Lerp(UIStyle.BLACK, 0.25))
+	gradient.Rotation = 90
+	gradient.Parent = face
+end
+
 -- Fades out everything inside `label`: dropShadow text (tweening a label's own TextTransparency does
 -- nothing, its text is hidden), outlines and images.
 function UIStyle.fadeOut(label: GuiObject, info: TweenInfo)
@@ -384,6 +415,67 @@ function UIStyle.recolor(button: GuiObject, colors: { Color3 })
 end
 
 -- A dark panel with a thick black edge (popups and the shops; gold until 2026-10-07, the user's call).
+-- The construction look (2026-10-11, the user's ask): every window sits on a band of black and yellow hazard stripes,
+-- like caution tape round its edge. The band is a frame of tiled stripes behind the window, a little bigger than it.
+-- It can't be inside the window (the window's list layout would lay it out like content), so it sits at the top of the
+-- window's ScreenGui, under everything, and follows the window's on-screen size, place and visibility every frame.
+local HAZARD_STRIPES = "rbxassetid://78813724066207" -- assets/textures/hazard_tape.png: black and white, tinted yellow
+local HAZARD_YELLOW = Color3.fromRGB(250, 196, 30) -- the BuilderBot armor's yellow
+-- 0.026 since 2026-10-11 (the user: slightly thinner; was 0.035, min 9, tile 0.12).
+local HAZARD_RIM = 0.026 -- the band's width, as a share of the window's smaller side (at least HAZARD_MIN pixels)
+local HAZARD_MIN = 7
+local HAZARD_TILE = 0.1 -- one stripe tile, as a share of the window's smaller side
+
+local function shownOnScreen(object: GuiObject): boolean
+	local at: Instance? = object
+	while at and not at:IsA("LayerCollector") do
+		if at:IsA("GuiObject") and not at.Visible then
+			return false
+		end
+		at = at.Parent
+	end
+	return at ~= nil
+end
+
+local function hazardRim(window: GuiObject)
+	local rim = Instance.new("ImageLabel")
+	rim.Name = "HazardRim"
+	rim.Image = HAZARD_STRIPES
+	rim.ImageColor3 = HAZARD_YELLOW
+	rim.ScaleType = Enum.ScaleType.Tile
+	rim.BackgroundColor3 = UIStyle.BLACK
+	rim.ZIndex = -1 -- under the window and everything else in its ScreenGui
+	rim.Visible = false
+	UIStyle.corner(rim, 26)
+	UIStyle.stroke(rim, 3, UIStyle.BLACK, true)
+	RunService.RenderStepped:Connect(function()
+		local gui = window:FindFirstAncestorWhichIsA("LayerCollector")
+		if not (gui and gui:IsA("ScreenGui")) then
+			rim.Visible = false
+			return
+		end
+		if rim.Parent ~= gui then
+			rim.Parent = gui
+		end
+		local size = window.AbsoluteSize
+		local show = gui.Enabled and size.X > 0 and size.Y > 0 and shownOnScreen(window)
+		rim.Visible = show
+		if not show then
+			return
+		end
+		local side = math.min(size.X, size.Y)
+		local band = math.max(HAZARD_MIN, math.round(side * HAZARD_RIM))
+		local at = window.AbsolutePosition - gui.AbsolutePosition
+		rim.Position = UDim2.fromOffset(at.X - band, at.Y - band)
+		rim.Size = UDim2.fromOffset(size.X + band * 2, size.Y + band * 2)
+		local tile = math.round(side * HAZARD_TILE)
+		rim.TileSize = UDim2.fromOffset(tile, tile)
+	end)
+	window.Destroying:Connect(function()
+		rim:Destroy()
+	end)
+end
+
 function UIStyle.panel(parent: Instance): Frame
 	local frame = Instance.new("Frame")
 	frame.BackgroundTransparency = 0.04
@@ -391,6 +483,7 @@ function UIStyle.panel(parent: Instance): Frame
 	UIStyle.glow(frame, UIStyle.PANEL_EDGE, UIStyle.PANEL_MIDDLE)
 	UIStyle.corner(frame, 18)
 	UIStyle.stroke(frame, 5, UIStyle.BLACK, true)
+	hazardRim(frame)
 	return frame
 end
 
@@ -418,8 +511,30 @@ end
 -- A UIScale that keeps the layout's proportions on any screen height.
 -- Phones and tablets: the HUD uses the pyramid's mobile layout (Forest Bar at the bottom).
 -- ScreenGuis keep the default ScreenInsets (CoreUISafeInsets), so nothing goes under a notch or the top bar.
+-- In Studio, the phone view can report a keyboard too, so there a touch screen counts as a phone when the view is
+-- phone-sized (its short side under PHONE_SHORT_SIDE). Until 2026-10-11 any touch screen in Studio did, so a
+-- touchscreen laptop got the phone layout (the user's report: the Forest Bar at the bottom on a laptop).
+local PHONE_SHORT_SIDE = 600
 function UIStyle.isTouch(): boolean
-	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	if not UserInputService.TouchEnabled then
+		return false
+	end
+	if not UserInputService.KeyboardEnabled then
+		return true
+	end
+	local camera = workspace.CurrentCamera
+	local view = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
+	return RunService:IsStudio() and math.min(view.X, view.Y) < PHONE_SHORT_SIDE
+end
+
+-- Whose button names to show: a gamepad's while one is in use, a phone's on touch screens (even when its keys
+-- move you, in Studio's phone view), else the keyboard's. The pile prompt and the tutorial both go by this.
+function UIStyle.inputKind(): "Gamepad" | "Touch" | "Keyboard"
+	local last = UserInputService:GetLastInputType()
+	if string.find(last.Name, "Gamepad") then
+		return "Gamepad"
+	end
+	return if last == Enum.UserInputType.Touch or UIStyle.isTouch() then "Touch" else "Keyboard"
 end
 
 -- The layout's size factor for the current screen height.
@@ -436,6 +551,58 @@ function UIStyle.autoScale(target: GuiObject, grow: number?)
 	local function update()
 		scale.Scale = UIStyle.screenScale() * (grow or 1)
 	end
+	local function watch()
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
+		end
+		update()
+	end
+	Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(watch)
+	watch()
+end
+
+-- Windows (the pop-ups: shop, daily, hats, gifts...) on phones: the HUD's scale times WINDOW_PHONE_GROW, as far as
+-- the window still fits in WINDOW_FIT of the screen's safe area (the user, 2026-10-11: on phones the windows' text was
+-- hard to read; landscape phones sit at MIN_SCALE, so a size-18 label was 9 pixels). Elsewhere just autoScale's.
+local WINDOW_PHONE_GROW = 1.6
+local WINDOW_FIT = 0.94
+-- Computers (2026-10-11, the user's ask, after a reference game whose shops fill over half the screen): windows grow
+-- WINDOW_DESKTOP_GROW times on top of their own grow, as far as they fit in WINDOW_DESKTOP_FIT of the screen (the height
+-- share leaves the top bar clear).
+local WINDOW_DESKTOP_GROW = 1.3
+local WINDOW_DESKTOP_FIT = Vector2.new(0.9, 0.7) -- 0.7: the upgrade shop (centred on the whole screen) clears the plank packs
+function UIStyle.windowScale(target: GuiObject, grow: number?)
+	local touch = UIStyle.isTouch()
+	local scale = Instance.new("UIScale")
+	scale.Parent = target
+	local function update()
+		local s = UIStyle.screenScale() * (if touch then WINDOW_PHONE_GROW else (grow or 1) * WINDOW_DESKTOP_GROW)
+		local fit = if touch then Vector2.new(WINDOW_FIT, WINDOW_FIT) else WINDOW_DESKTOP_FIT
+		local gui = target:FindFirstAncestorWhichIsA("LayerCollector")
+		-- Its size at scale 1, roughly (text and strokes don't scale exactly, so this runs again as it settles).
+		local natural = target.AbsoluteSize / scale.Scale
+		local area = if gui then gui.AbsoluteSize else Vector2.zero
+		if natural.X <= 0 or natural.Y <= 0 or area.X <= 0 or area.Y <= 0 then
+			return -- not laid out yet: AbsoluteSize changes once it is
+		end
+		s = math.min(s, fit.X * area.X / natural.X, fit.Y * area.Y / natural.Y)
+		if math.abs(scale.Scale - s) > 0.001 then
+			scale.Scale = s
+		end
+	end
+	target:GetPropertyChangedSignal("AbsoluteSize"):Connect(update) -- its content grows or it's first laid out
+	task.defer(function()
+		local gui = target:FindFirstAncestorWhichIsA("LayerCollector")
+		if gui then
+			gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
+			if gui:IsA("ScreenGui") then
+				gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+					task.defer(update)
+				end)
+			end
+		end
+	end)
 	local function watch()
 		local camera = Workspace.CurrentCamera
 		if camera then
@@ -477,7 +644,11 @@ end
 
 -- A dark band behind a sign's text, fading out at both ends, so the text sits on a soft dark strip (the user's
 -- "vignette" for the lobby signs, 2026-10-07). Centered in its parent; draws behind the text (ZIndex 0).
-local BAND_WIDTH = 0.8 -- of the sign's width, centered (1 was a bit long)
+-- Of the sign's width, centered, past its edges (signs don't clip): 1.3 since 2026-10-11 with shorter fades, so the
+-- dark middle covers the whole word (the user: PLANKS's letters ran out of it; at 0.8 with quarter fades only the middle
+-- 40% was dark).
+local BAND_WIDTH = 1.3
+local BAND_FADE = 0.12 -- each end fades out over this share of the band
 local BAND_HEIGHT = 1.6 -- of the sign's height, centered: room above and below the text (1 was tight)
 local BAND_DARKEST = 0.75 -- transparency in the middle (0 = solid black; 0.35, then 0.6, were too dark)
 -- The animated rainbow (2026-10-08): six colors, and rainbowSequence(phase) is the whole rainbow across a gradient,
@@ -520,8 +691,8 @@ function UIStyle.band(parent: Instance): Frame
 	local fade = Instance.new("UIGradient")
 	fade.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.25, BAND_DARKEST),
-		NumberSequenceKeypoint.new(0.75, BAND_DARKEST),
+		NumberSequenceKeypoint.new(BAND_FADE, BAND_DARKEST),
+		NumberSequenceKeypoint.new(1 - BAND_FADE, BAND_DARKEST),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	fade.Parent = band

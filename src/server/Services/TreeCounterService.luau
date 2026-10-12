@@ -53,7 +53,8 @@ local function flush()
 end
 
 function TreeCounterService.init()
-	store = DataStoreService:GetDataStore(`GlobalStats{if RunService:IsStudio() then "_Studio" else ""}`)
+	-- Canyon since the canyon game (2026-10-10): the board counts bridge sections from zero; Plant Trees!'s trees stay in GlobalStats.
+	store = DataStoreService:GetDataStore(`CanyonGlobalStats{if RunService:IsStudio() then "_Studio" else ""}`)
 	publish()
 end
 

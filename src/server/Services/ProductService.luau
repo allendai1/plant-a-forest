@@ -3,7 +3,7 @@
 -- Developer products are granted only here, from the receipt Roblox sends the server:
 -- - Awakening.BreakTime: break time for the whole server (kept for the next break if none is running)
 -- - Awakening.WorldPicks: picks the next forest's world for everyone
--- - BarBoosts: seeds straight into the Forest Bar (ForestService.addSeeds)
+-- - BarBoosts: a share of the bridge's planks straight onto it (ForestService.addSeeds)
 -- - ServerBoost: 2x training for everyone for a while (TrainingService.addServerBoost)
 -- - UpgradeProducts: one upgrade level, saved through DataService.grantPurchase
 -- - Boosts[].ProductId: a permanent Strength or Speed boost, saved the same way (PassService publishes it)
@@ -24,6 +24,7 @@ local LEVEL_KEYS: { [string]: DataService.StatKey } = {
 	BulkPickup = "BulkPickupLevel",
 	BulkPlant = "BulkPlantLevel",
 	PlantingRange = "PlantingRangeLevel",
+	LuckyPlanks = "LuckyPlanksLevel",
 }
 
 local ProductService = {}
@@ -84,10 +85,12 @@ local function seedOf(productId: number): string?
 	return nil
 end
 
+-- A bar pack's planks: its share of the bridge as it is now (the button showed the same).
 local function barSeedsOf(productId: number): number?
 	for _, boost in GameConfig.BarBoosts do
 		if boost.ProductId == productId then
-			return boost.Seeds
+			local target = ReplicatedStorage:WaitForChild("ForestState"):GetAttribute("Target")
+			return GameConfig.barBoostPlanks(boost.Share, if typeof(target) == "number" then target else 0)
 		end
 	end
 	return nil

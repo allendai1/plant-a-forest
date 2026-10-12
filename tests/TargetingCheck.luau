@@ -1,83 +1,59 @@
 --!strict
--- Checks for Shared/Targeting (docs/plans/M4.md). Not shipped: run it in Studio's Edit mode through
--- the Studio connection; it returns "Targeting: all checks passed" or errors on the first failure.
+-- Checks for Shared/BridgeGrid and Shared/Targeting (bridge slots, 2026-10-10). Not shipped: run it in Studio's Edit
+-- mode through the Studio connection; it returns "Targeting: all checks passed" or errors on the first failure.
 
-local HexGrid = require(game:GetService("ReplicatedStorage").Shared.HexGrid)
-local Targeting = require(game:GetService("ReplicatedStorage").Shared.Targeting)
+local Shared = game:GetService("ReplicatedStorage").Shared
+local BridgeGrid = require(Shared.BridgeGrid)
+local GameConfig = require(Shared.GameConfig)
+local Targeting = require(Shared.Targeting)
 
-local SIZE = 16
-local ORIGIN = Vector3.new(0, 0.4, 0)
-local SPACING = SIZE * math.sqrt(3) -- neighbor centers, ~27.7 studs
+local grid = GameConfig.Grid
+-- A bridge leaving a rim at (-180, 1, 0) toward -X, like the map's.
+local FRAME = CFrame.lookAt(Vector3.new(-180, 1, 0), Vector3.new(-181, 1, 0))
 local allOpen = function(_q: number, _r: number): boolean
 	return true
 end
 
-local here = HexGrid.toWorld(5, 0, SIZE, ORIGIN) + Vector3.new(0, 3, 0) -- standing on hex (5, 0)
-
--- Range 30: the hex you stand on first, then its 6 neighbors (all at the same distance).
-local near = Targeting.openNear(here, 30, SIZE, ORIGIN, allOpen)
-assert(#near == 7, `expected 7 hexes in 30 studs, got {#near}`)
-assert(near[1].q == 5 and near[1].r == 0 and near[1].distance < 1e-3, "the hex you stand on should come first")
-for i = 2, 7 do
-	assert(math.abs(near[i].distance - SPACING) < 1e-3, "neighbors should be one spacing away")
-	assert(HexGrid.distance(near[i].q, near[i].r, 5, 0) == 1, "neighbors should be one step away")
+-- Grid math: row 1 is half a slot out from the rim; the columns sit side by side, centered on the bridge's line.
+local middle = math.ceil(grid.Columns / 2) -- a whole column next to the bridge's line (or on it, for odd widths)
+local first = BridgeGrid.toWorld(middle, 1, FRAME)
+assert(math.abs(FRAME:PointToObjectSpace(first).Z + grid.SlotStuds / 2) < 1e-3, "row 1 starts at the rim")
+local left, right = BridgeGrid.toWorld(1, 1, FRAME), BridgeGrid.toWorld(grid.Columns, 1, FRAME)
+assert(math.abs((right - left).Magnitude - (grid.Columns - 1) * grid.SlotStuds) < 1e-3, "columns are a slot apart")
+assert(((left + right) / 2 - (FRAME.Position + FRAME.LookVector * grid.SlotStuds / 2)).Magnitude < 1e-3, "centered on the line")
+for _, slot in { { 1, 1 }, { grid.Columns, 7 }, { 2, grid.Rows } } do
+	local q, r = BridgeGrid.fromWorld(BridgeGrid.toWorld(slot[1], slot[2], FRAME) + Vector3.new(1, 3, -1), FRAME)
+	assert(q == slot[1] and r == slot[2], `fromWorld finds slot {slot[1]},{slot[2]}`)
 end
--- Equal distances are ordered by q, then r, so the client and server pick the same one.
-for i = 3, 7 do
-	local a, b = near[i - 1], near[i]
-	assert(a.q < b.q or (a.q == b.q and a.r < b.r), "ties should be ordered by q then r")
+assert(not BridgeGrid.valid(0, 1) and not BridgeGrid.valid(1, 0) and not BridgeGrid.valid(1.5, 2), "outside or fractional")
+assert(not BridgeGrid.valid(0 / 0, 1) and not BridgeGrid.valid(1, math.huge), "NaN and infinity are refused")
+
+-- openNear: standing on row 5's middle slot, the closest is that slot, then its neighbors; nothing outside the grid.
+local here = BridgeGrid.toWorld(middle, 5, FRAME) + Vector3.new(0, 3, 0)
+local near = Targeting.openNear(here, 12, FRAME, allOpen)
+assert(near[1].q == middle and near[1].r == 5 and near[1].distance < 1e-3, "the slot underfoot comes first")
+for i = 2, #near do
+	assert(near[i].distance <= 12 and near[i].distance >= near[i - 1].distance, "sorted by distance, within range")
+	assert(BridgeGrid.valid(near[i].q, near[i].r), "only slots inside the grid")
 end
-
--- Range edge: just under one spacing leaves only the hex you stand on.
-assert(#Targeting.openNear(here, SPACING - 0.01, SIZE, ORIGIN, allOpen) == 1, "neighbors are just out of range")
-assert(#Targeting.openNear(here, SPACING + 0.01, SIZE, ORIGIN, allOpen) == 7, "neighbors are just in range")
-
--- Closed hexes are skipped: with your own hex full, a neighbor comes first.
-local skipOwn = Targeting.openNear(here, 30, SIZE, ORIGIN, function(q: number, r: number): boolean
-	return not (q == 5 and r == 0)
+local closed = Targeting.openNear(here, 12, FRAME, function(q, r)
+	return not (q == middle and r == 5)
 end)
-assert(#skipOwn == 6 and HexGrid.distance(skipOwn[1].q, skipOwn[1].r, 5, 0) == 1, "a full hex should be skipped")
+assert(closed[1].distance == grid.SlotStuds, "a closed slot is skipped")
 
--- Height is ignored: standing 50 studs up changes nothing.
-assert(#Targeting.openNear(here + Vector3.new(0, 50, 0), 30, SIZE, ORIGIN, allOpen) == 7, "height should be ignored")
-
--- A bigger range reaches part of the second ring (Planting Range level 5: 30 + 20 = 50 studs).
--- Six second-ring hexes are sqrt(3) spacings away (48 studs), the other six are 2 spacings (55.4).
-assert(#Targeting.openNear(here, 50, SIZE, ORIGIN, allOpen) == 13, "50 studs should reach 13 hexes")
-assert(#Targeting.openNear(here, 56, SIZE, ORIGIN, allOpen) == 19, "56 studs should reach all 19")
-
--- Two rings (isOpenPlot, 2026-10-09): ring 15 open, outside-in, one ring ahead.
-local inner = HexGrid.ring(14)[3]
-local outerNeighbor, farInner
-for _, n in HexGrid.neighbors(inner.q, inner.r) do
-	local d = HexGrid.distance(n.q, n.r, 0, 0)
-	if d == 15 then
-		outerNeighbor = n
-	elseif d == 13 then
-		farInner = n
-	end
-end
-assert(outerNeighbor and farInner, "a ring-14 hex touches rings 15 and 13")
+-- isOpenPlot: the open row, and the row after it only behind a finished slot.
 local grownSet: { [string]: boolean } = {}
-local grown = function(q: number, r: number): boolean
-	return grownSet[HexGrid.key(q, r)] == true
+local function grown(q: number, r: number): boolean
+	return grownSet[BridgeGrid.key(q, r)] == true
 end
-local function open(hex: HexGrid.Hex, ring: number, ahead: number): boolean
-	return Targeting.isOpenPlot(hex.q, hex.r, ring, false, 15, true, ahead, grown)
-end
-assert(open(outerNeighbor, 15, 1), "the open ring is open")
-assert(not open(inner, 14, 1), "ring 14 waits for a full-grown tree outside it")
-grownSet[HexGrid.key(outerNeighbor.q, outerNeighbor.r)] = true
-assert(open(inner, 14, 1), "a full-grown ring-15 tree opens the plot behind it")
-assert(not open(inner, 14, 0), "AheadRings 0 keeps only the open ring")
-grownSet[HexGrid.key(inner.q, inner.r)] = true
-assert(not open(farInner, 13, 1), "one ring ahead at most")
-assert(open(farInner, 13, 2), "two rings ahead with AheadRings 2")
-assert(not Targeting.isOpenPlot(inner.q, inner.r, 14, true, 15, true, 1, grown), "a full plot is never open")
-assert(not Targeting.isOpenPlot(outerNeighbor.q, outerNeighbor.r, 15, false, 0, true, 1, grown), "done: nothing open")
--- Inner-first (ring 13 open): ring 14 is the ring ahead and opens behind full-grown ring-13 trees.
-assert(not Targeting.isOpenPlot(inner.q, inner.r, 14, false, 13, false, 1, grown), "inner-first: waits for ring 13")
-grownSet[HexGrid.key(farInner.q, farInner.r)] = true
-assert(Targeting.isOpenPlot(inner.q, inner.r, 14, false, 13, false, 1, grown), "inner-first: opens behind ring 13")
+assert(Targeting.isOpenPlot(1, 4, 4, false, 4, 1, grown), "the open row is open")
+assert(not Targeting.isOpenPlot(1, 4, 4, true, 4, 1, grown), "a finished slot isn't")
+assert(not Targeting.isOpenPlot(1, 5, 5, false, 4, 1, grown), "the next row waits for the slot behind it")
+grownSet[BridgeGrid.key(1, 4)] = true
+assert(Targeting.isOpenPlot(1, 5, 5, false, 4, 1, grown), "... and opens once it's finished")
+assert(not Targeting.isOpenPlot(2, 5, 5, false, 4, 1, grown), "only behind its own column")
+assert(not Targeting.isOpenPlot(1, 5, 5, false, 4, 0, grown), "AheadRings 0: only the open row")
+assert(not Targeting.isOpenPlot(1, 3, 3, false, 4, 1, grown), "rows behind the open one are closed")
+assert(not Targeting.isOpenPlot(1, 4, 4, false, 0, 1, grown), "nothing is open once the bridge is done")
 
 return "Targeting: all checks passed"

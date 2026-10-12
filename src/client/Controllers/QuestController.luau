@@ -7,6 +7,8 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
@@ -25,6 +27,11 @@ local DOT_COLOR = Color3.fromRGB(235, 45, 45)
 local DONE_COLOR = Color3.fromRGB(120, 255, 100)
 local VIGNETTE_DARKEST = 0.35 -- the quest card's black at its left edge (transparency), fading to nothing at the right
 local VIGNETTE_MIDDLE = 0.6
+-- The first quest's spotlight (2026-10-11, the user's ask): once quest 1 is reached, the screen dims around the quest
+-- card, a gold ring pulses round CLAIM and "Claim your reward!" points at it, until it's claimed. Like the shop's
+-- tutorial spotlight (ShopController). Only the first quest: after that players know the card.
+local SPOT_PULSE = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+local DIM_TRANSPARENCY = 0.45
 
 local QuestController = {}
 
@@ -134,7 +141,7 @@ local function buildList(): ScreenGui
 	holder.AutomaticSize = Enum.AutomaticSize.Y
 	holder.BackgroundTransparency = 1
 	holder.Parent = screen
-	UIStyle.autoScale(holder)
+	UIStyle.windowScale(holder)
 	local panel = UIStyle.panel(holder)
 	panel.Size = UDim2.fromScale(1, 0)
 	panel.AutomaticSize = Enum.AutomaticSize.Y
@@ -243,10 +250,71 @@ local function buildTracker(): (Frame, () -> ())
 	UIStyle.corner(dot, 10)
 	UIStyle.stroke(dot, 2, UIStyle.WHITE, true)
 
+	-- The first quest's spotlight: a pulsing ring on CLAIM, a tag to the card's right, and four shades round them.
+	local ring = Instance.new("Frame")
+	ring.Name = "Spotlight"
+	ring.AnchorPoint = Vector2.new(0.5, 0.5)
+	ring.Position = UDim2.fromScale(0.5, 0.5)
+	ring.Size = UDim2.new(1, 12, 1, 12)
+	ring.BackgroundTransparency = 1
+	ring.ZIndex = 8
+	ring.Parent = button
+	UIStyle.corner(ring, 14)
+	TweenService:Create(UIStyle.stroke(ring, 5, UIStyle.GOLD, true), SPOT_PULSE, { Transparency = 0.7 }):Play()
+	local tag = UIStyle.text(card, "Claim your reward!", 26, UIStyle.GOLD)
+	tag.AnchorPoint = Vector2.new(0, 1)
+	tag.Position = UDim2.new(1, 14, 1, -8)
+	tag.ZIndex = 8
+	local screen = card:FindFirstAncestorWhichIsA("ScreenGui") :: ScreenGui
+	local dims: { Frame } = {}
+	for i = 1, 4 do
+		local dim = Instance.new("Frame")
+		dim.Name = "QuestSpotlightShade"
+		dim.BackgroundColor3 = Color3.new(0, 0, 0)
+		dim.BackgroundTransparency = DIM_TRANSPARENCY
+		dim.BorderSizePixel = 0
+		dim.ZIndex = 40
+		dim.Visible = false
+		dim.Parent = screen
+		dims[i] = dim
+	end
+	local spotOn = false
+	local function setSpot(on: boolean)
+		spotOn = on
+		ring.Visible, tag.Visible = on, on
+		for _, dim in dims do
+			dim.Visible = on
+		end
+	end
+	setSpot(false)
+	-- The hole round the card and its tag, kept in place every frame (the column scales with the screen).
+	RunService.RenderStepped:Connect(function()
+		if not spotOn then
+			return
+		end
+		local area = screen.AbsoluteSize
+		local from = card.AbsolutePosition:Min(tag.AbsolutePosition) - Vector2.new(8, 8) - screen.AbsolutePosition
+		local to = (card.AbsolutePosition + card.AbsoluteSize):Max(tag.AbsolutePosition + tag.AbsoluteSize)
+			+ Vector2.new(8, 8)
+			- screen.AbsolutePosition
+		local top, left, bottom, right = math.floor(from.Y), math.floor(from.X), math.ceil(to.Y), math.ceil(to.X)
+		local rects = {
+			{ 0, 0, area.X, top },
+			{ 0, bottom, area.X, area.Y - bottom },
+			{ 0, top, left, bottom - top },
+			{ right, top, area.X - right, bottom - top },
+		}
+		for i, r in rects do
+			dims[i].Position = UDim2.fromOffset(r[1], r[2])
+			dims[i].Size = UDim2.fromOffset(math.max(r[3], 0), math.max(r[4], 0))
+		end
+	end)
+
 	local function refresh()
 		local index, quest = current()
 		card.Visible = quest ~= nil
 		if not quest then
+			setSpot(false)
 			return
 		end
 		local value = progressOf(quest)
@@ -257,6 +325,11 @@ local function buildTracker(): (Frame, () -> ())
 		setBar(value, quest.Goal, ready)
 		button.Visible = ready
 		dot.Visible = ready
+		local spot = ready and index == 1
+		if spot and not spotOn then
+			Sounds.play("LevelUp")
+		end
+		setSpot(spot)
 	end
 	return card, refresh
 end

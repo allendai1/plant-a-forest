@@ -1,5 +1,6 @@
 --!strict
--- CarryController: the acorn stack over every player's head, built from their Carried attribute
+-- CarryController: the stack of plank bundles over every player's head (bundles since 2026-10-10; they were acorns),
+-- built from their Carried attribute
 -- (GameConfig.AcornStack, 2026-10-08; it was acorns circling the head, docs/plans/AcornOrbit.md, and before that
 -- one giant seed, M3). One acorn grows with the seeds; a full one stays and the next grows on top of it, with
 -- a puff when a new one starts. Sizes ease toward their targets, so picking up and planting grow and shrink it
@@ -12,12 +13,16 @@
 -- A special seed in hand (SeedBagController, docs/plans/SeedShop.md) is planted first with PlantSpecial.
 -- While you carry seeds, Q or the gamepad Y button drops them all (DropSeeds), anywhere (2026-10-08, the user's
 -- call; it was lobby only). Computers show a small "Q to drop" hint bottom right; phones get a Drop button.
+-- Auto Build pass owners (AutoBuild attribute, 2026-10-11) place without holding anything: while they carry planks
+-- and have a target, a loop places at their usual pace, the same request a held E sends. Lucky Planks (2026-10-11):
+-- planks that come back to your hands show a "Lucky! +N" pop rising from the slot they were placed in (LuckyPlanks).
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
@@ -28,14 +33,16 @@ local Sounds = require(script.Parent.Parent.Sounds)
 local TargetController = require(script.Parent.TargetController)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
--- Look of the acorn stack (visual only; the sizes are in GameConfig.AcornStack).
-local ACORN_HEIGHT = 10 -- Assets.Acorn's height as modeled
+-- Look of the bundle stack (visual only; the sizes are in GameConfig.AcornStack).
+local ACORN_HEIGHT = 1 -- a plank bundle's height as built by newAcorn()
+local BUNDLE_SIZE = Vector3.new(5, 1, 1.8) -- planks run along X: about one plank's length and two planks wide
+local SPREAD = 0.3 -- the bundle's length and width grow with its height to this power (height grows fully)
+local MAX_SPREAD = 2.2 -- ... up to this many times
+local STRAP_COLOR = Color3.fromRGB(70, 46, 30)
 local SHOW_STUDS = 250 -- acorns of players farther than this from the camera aren't shown
 local EASE_RATE = 10 -- how fast a size eases to its target (per second; higher is snappier)
 local GONE = 0.05 -- a leaving acorn smaller than this (studs) is removed
-local HEAD_GAP = 0.4 -- studs between the top of the head and the bottom acorn
-local SPIN = 0.6 -- radians per second, each acorn a little behind the one under it
-local SWAY = math.rad(5) -- the stack's gentle wobble
+local HEAD_GAP = 0 -- studs between the top of the head and the bottom bundle (0.4 until it stopped floating)
 local PUFF_COUNT = 14
 local PLANT_ACTION = "Plant"
 local DROP_ACTION = "DropSeeds"
@@ -44,7 +51,13 @@ local DROP_HINT_MARGIN = 8
 local BUTTON_FILL = 0.45 -- the mobile Plant button's dark fill transparency (like the jump button)
 local DIMMED = 0.75 -- the Plant button's fill transparency with nothing to plant; its label fades too
 local PLANT_BUTTON_SCALE = 0.9 -- the mobile Plant button's size, as a share of the jump button's (Roblox's is ~45 px)
-local DROP_BAR_GAP = 10 -- phones: the gap between the Forest Bar and the Drop button right of it, in the bar's pixels
+-- The Build button's icon: a white outlined plank (tools/make_ui_icons.py), after Build the Pyramid's outlined block
+-- (2026-10-10, the user's ask; it said "Build"). Decal 136165727060497.
+local PLANK_ICON = "rbxassetid://93968072318922"
+local ICON_SCALE = 0.62 -- the icon's size, as a share of the button's
+local DROP_ICON = "rbxassetid://73901267496151" -- the Drop button's: a down arrow onto a line (make_ui_icons.py; decal 127276746461495)
+local DROP_SCALE = 0.85 -- phones: the Drop button's size, as a share of Build's (the user: slightly smaller)
+local BUTTON_GAP = 0.2 -- phones: the gap between the round buttons, as a share of Build's size (the reference's)
 
 type Piece = { part: BasePart, rel: CFrame, size: Vector3 }
 type Acorn = {
@@ -62,6 +75,7 @@ local folder: Folder
 local puffPart: Part
 local puffEmitter: ParticleEmitter
 local promptsShown = 0
+local dropBound = false -- DROP_ACTION is bound only while you carry planks (GetButton warns when it isn't)
 local holding = false
 local moveParts: { BasePart } = {}
 local moveFrames: { CFrame } = {}
@@ -87,8 +101,40 @@ local function clearOrbit(player: Player)
 	end
 end
 
+-- The live map's building material (GameConfig.Decks): what the carried bundles are made of.
+local function deckLook(): GameConfig.Deck
+	local map = workspace:FindFirstChild("Map")
+	return GameConfig.deckFor(map and map:GetAttribute("CurrentMap"))
+end
+
+-- A bundle of planks: a block of the map's material (concrete slabs, steel plates or asphalt since 2026-10-11; wood
+-- before) with two dark straps, its pivot at its bottom middle.
+local function bundleModel(): Model
+	local model = Instance.new("Model")
+	model.Name = "PlankBundle"
+	local block = Instance.new("Part")
+	block.Name = "Planks"
+	block.Size = BUNDLE_SIZE
+	block.CFrame = CFrame.new(0, BUNDLE_SIZE.Y / 2, 0)
+	local look = deckLook()
+	block.Color = look.Color
+	block.Material = look.Material
+	block.Parent = model
+	for _, x in { -BUNDLE_SIZE.X / 4, BUNDLE_SIZE.X / 4 } do
+		local strap = Instance.new("Part")
+		strap.Name = "Strap"
+		strap.Size = Vector3.new(0.35, BUNDLE_SIZE.Y * 1.04, BUNDLE_SIZE.Z + 0.1) -- scaled with the bundle, so kept proportional
+		strap.CFrame = CFrame.new(x, BUNDLE_SIZE.Y / 2, 0)
+		strap.Color = STRAP_COLOR
+		strap.Material = Enum.Material.Fabric
+		strap.Parent = model
+	end
+	model.WorldPivot = CFrame.identity
+	return model
+end
+
 local function newAcorn(): Acorn
-	local model = (ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Acorn") :: Model):Clone()
+	local model = bundleModel()
 	local pivot = model:GetPivot()
 	local pieces: { Piece } = {}
 	for _, part in model:GetDescendants() do
@@ -142,7 +188,6 @@ end
 local function step(dt: number)
 	local camera = workspace.CurrentCamera
 	local eye = if camera then camera.CFrame.Position else Vector3.zero
-	local now = os.clock()
 	local ease = 1 - math.exp(-EASE_RATE * dt)
 	table.clear(moveParts)
 	table.clear(moveFrames)
@@ -168,8 +213,12 @@ local function step(dt: number)
 				table.remove(orbit.acorns, i)
 			end
 		end
-		local sway = CFrame.Angles(math.sin(now * 1.3) * SWAY, 0, math.cos(now * 1.1) * SWAY)
-		local base = CFrame.new(head.Position + Vector3.new(0, head.Size.Y / 2 + HEAD_GAP, 0)) * sway
+		-- Resting on top of the head, turned with the character (no spin or wobble since 2026-10-10, the user's call).
+		local look = head.CFrame.LookVector
+		local yaw = math.atan2(-look.X, -look.Z)
+		-- Turned a quarter: the planks run front to back over the head (the user's call; they ran across the shoulders).
+		local base = CFrame.new(head.Position + Vector3.new(0, head.Size.Y / 2 + HEAD_GAP, 0))
+			* CFrame.Angles(0, yaw + math.pi / 2, 0)
 		local height = 0
 		for i, acorn in orbit.acorns do
 			acorn.size += ((orbit.sizes[i] or 0) - acorn.size) * ease
@@ -177,12 +226,15 @@ local function step(dt: number)
 				acorn.model.Parent = folder
 			end
 			-- The model's pivot is its bottom, so each acorn sits on top of the ones below it.
-			local bottom = base * CFrame.new(0, height, 0) * CFrame.Angles(0, now * SPIN - i * 0.7, 0)
+			local bottom = base * CFrame.new(0, height, 0)
 			height += acorn.size
-			local factor = math.max(acorn.size, 0.01) / ACORN_HEIGHT
-			local resize = math.abs(factor - acorn.scale) > 1e-3
+			-- Taller with more planks; longer and wider only a little, so a few planks look like a few planks.
+			local tall = math.max(acorn.size, 0.01) / ACORN_HEIGHT
+			local wide = math.clamp(tall ^ SPREAD, 1, MAX_SPREAD)
+			local factor = Vector3.new(wide, tall, wide)
+			local resize = math.abs(tall - acorn.scale) > 1e-3
 			if resize then
-				acorn.scale = factor
+				acorn.scale = tall
 			end
 			for _, piece in acorn.pieces do
 				if resize then
@@ -258,9 +310,13 @@ local function tryPlant()
 end
 
 local function onPlantAction(_: string, state: Enum.UserInputState, _: InputObject): Enum.ContextActionResult
-	if state ~= Enum.UserInputState.Begin then
+	if state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
 		holding = false -- always stop on release, even if a prompt appeared while held
 		return Enum.ContextActionResult.Pass
+	elseif state ~= Enum.UserInputState.Begin then
+		-- Change: a finger moving on the phone's Build button while it's held (easy while walking with the other thumb).
+		-- It's still held, so keep going (2026-10-11, the user: it stopped, and walking back in range didn't resume).
+		return Enum.ContextActionResult.Sink
 	end
 	if promptsShown > 0 then
 		return Enum.ContextActionResult.Pass -- E belongs to the rack or bench prompt right now
@@ -280,6 +336,88 @@ local function onPlantAction(_: string, state: Enum.UserInputState, _: InputObje
 		end)
 	end
 	return Enum.ContextActionResult.Sink
+end
+
+-- Auto Build: places for pass owners while they carry planks and have a target, at their pace. Holding E (or a
+-- special seed in hand) takes over.
+local AUTO_IDLE_SECONDS = 0.1
+local function autoPlace()
+	local player = Players.LocalPlayer
+	while true do
+		if
+			player:GetAttribute("AutoBuild") == true
+			and player:GetAttribute("AutoBuildOn") ~= 0 -- its Settings switch
+			and not holding
+			and not SeedBagController.held()
+			and TargetController.getTarget()
+			and carriedOf(player) > 0
+		then
+			tryPlant()
+			local hands = player:GetAttribute("HandsSpeed")
+			task.wait(GameConfig.pressSeconds(if typeof(hands) == "number" then hands else 1))
+		else
+			task.wait(AUTO_IDLE_SECONDS)
+		end
+	end
+end
+
+-- Lucky Planks: a gold "Lucky! +N" rises from the slot the lucky plank was placed in and fades (the user's ask: from the
+-- block, not over your head). Lucky planks on the same slot close together are added into one pop (LUCKY_GAP).
+local LUCKY_GAP = 0.4
+local LUCKY_COLOR = Color3.fromRGB(255, 220, 90)
+local luckyWaiting: { [Vector3]: number } = {}
+
+local function luckyPop(position: Vector3, count: number)
+	local anchor = Instance.new("Attachment")
+	anchor.WorldPosition = position + Vector3.new(0, 1.5, 0)
+	anchor.Parent = workspace.Terrain
+	local sign = Instance.new("BillboardGui")
+	sign.Size = UDim2.fromOffset(240, 60)
+	sign.AlwaysOnTop = true
+	sign.LightInfluence = 0
+	sign.Adornee = anchor
+	local label = UIStyle.text(sign, `Lucky! +{count}`, 34, LUCKY_COLOR)
+	label.AnchorPoint = Vector2.new(0.5, 0.5)
+	label.Position = UDim2.fromScale(0.5, 0.5)
+	sign.Parent = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	Sounds.play("Gain", 1.3)
+	local rise = TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	TweenService:Create(sign, rise, { StudsOffsetWorldSpace = Vector3.new(0, 3, 0) }):Play()
+	for _, text in sign:GetDescendants() do
+		if text:IsA("TextLabel") then
+			TweenService:Create(text, rise, { TextTransparency = 1 }):Play()
+		elseif text:IsA("UIStroke") then
+			TweenService:Create(text, rise, { Transparency = 1 }):Play()
+		end
+	end
+	task.delay(0.95, function()
+		sign:Destroy()
+		anchor:Destroy()
+	end)
+end
+
+-- spots = { position, count, position, count, ... } (ForestService).
+local function onLucky(spots: unknown)
+	if typeof(spots) ~= "table" then
+		return
+	end
+	local list = spots :: { any }
+	for i = 1, #list - 1, 2 do
+		local position, count = list[i], list[i + 1]
+		if typeof(position) == "Vector3" and typeof(count) == "number" then
+			local waiting = luckyWaiting[position]
+			luckyWaiting[position] = (waiting or 0) + count
+			if not waiting then
+				task.delay(LUCKY_GAP, function()
+					local total = luckyWaiting[position]
+					luckyWaiting[position] = nil
+					if total then
+						luckyPop(position, total)
+					end
+				end)
+			end
+		end
+	end
 end
 
 -- Phones: Roblox puts action buttons over the jump button; this moves one next to it instead, nearly the jump
@@ -313,7 +451,8 @@ local function darkRound(button: ImageButton)
 	rim.Parent = button
 end
 
-local function placeNearJump(action: string, offset: (jumpSize: Vector2, size: number) -> Vector2)
+-- `scale` is the button's size as a share of Build's; `offset` gets the jump button's size, Build's and this button's.
+local function placeNearJump(action: string, scale: number, offset: (jumpSize: Vector2, build: number, size: number) -> Vector2)
 	local button = ContextActionService:GetButton(action)
 	local touchGui = Players.LocalPlayer.PlayerGui:FindFirstChild("TouchGui")
 	local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
@@ -322,23 +461,42 @@ local function placeNearJump(action: string, offset: (jumpSize: Vector2, size: n
 		return
 	end
 	darkRound(button)
-	local size = math.round(jump.AbsoluteSize.X * PLANT_BUTTON_SCALE)
+	local icon = button:FindFirstChild("ActionIcon")
+	if icon and icon:IsA("ImageLabel") then
+		icon.AnchorPoint = Vector2.new(0.5, 0.5)
+		icon.Position = UDim2.fromScale(0.5, 0.5)
+		icon.Size = UDim2.fromScale(ICON_SCALE, ICON_SCALE)
+	end
+	local build = math.round(jump.AbsoluteSize.X * PLANT_BUTTON_SCALE)
+	local size = math.round(build * scale)
 	button.Size = UDim2.fromOffset(size, size)
-	local spot = jump.AbsolutePosition + offset(jump.AbsoluteSize, size)
+	local spot = jump.AbsolutePosition + offset(jump.AbsoluteSize, build, size)
 	ContextActionService:SetPosition(
 		action,
 		UDim2.fromOffset(spot.X - frame.AbsolutePosition.X, spot.Y - frame.AbsolutePosition.Y)
 	)
 end
 
--- Plant: up and to the left of the jump button, where the right thumb rests (2026-10-08, the user's ask; it was
--- level with the jump button, too low). A full width left, clear of the Strength boost label above the jump button.
-local function plantSpot(_: Vector2, size: number): Vector2
-	return Vector2.new(-size, -(size + 12))
+-- The layout copies Build the Pyramid's (2026-10-10, the user's call): Build level with the jump button on its left,
+-- and a slightly smaller Drop above, halfway between them. (Build sat up and to the left of jump from 2026-10-08,
+-- and Drop was a text button right of the Forest Bar.)
+local function plantSpot(jumpSize: Vector2, build: number, _: number): Vector2
+	return Vector2.new(-(build + math.round(build * BUTTON_GAP)), (jumpSize.Y - build) / 2)
+end
+
+local function dropSpot(jumpSize: Vector2, build: number, size: number): Vector2
+	local gap = math.round(build * BUTTON_GAP)
+	local buildMiddle = -(gap + build / 2)
+	local middle = (buildMiddle + jumpSize.X / 2) / 2
+	local top = math.min((jumpSize.Y - build) / 2, 0) -- the higher of Build's and jump's tops
+	return Vector2.new(middle - size / 2, top - gap / 2 - size)
 end
 
 local function placeButtons()
-	placeNearJump(PLANT_ACTION, plantSpot)
+	placeNearJump(PLANT_ACTION, 1, plantSpot)
+	if dropBound then
+		placeNearJump(DROP_ACTION, DROP_SCALE, dropSpot)
+	end
 end
 
 local function bindPlanting()
@@ -356,7 +514,7 @@ local function bindPlanting()
 		Enum.KeyCode.ButtonX,
 		Enum.UserInputType.MouseButton1
 	)
-	ContextActionService:SetTitle(PLANT_ACTION, "Plant")
+	ContextActionService:SetImage(PLANT_ACTION, PLANK_ICON)
 	task.spawn(function()
 		local camera = workspace.CurrentCamera
 		while true do -- the touch controls appear a moment after joining, and move when the screen turns
@@ -393,65 +551,22 @@ local function bindPlanting()
 			else TargetController.getTarget() == nil or carriedOf(Players.LocalPlayer) == 0
 		if button then
 			button.BackgroundTransparency = if want then DIMMED else BUTTON_FILL
-			local title = button:FindFirstChildWhichIsA("TextLabel")
-			if title then
-				title.TextTransparency = if want then 0.4 else 0
+			local icon = button:FindFirstChild("ActionIcon")
+			if icon and icon:IsA("ImageLabel") then
+				icon.ImageTransparency = if want then 0.6 else 0
 			end
 		end
 	end)
 end
 
--- Phones: a small dark "Drop" button just right of the Forest Bar (at the bottom there), as tall as the bar, with a
--- gap (2026-10-08, the user's ask: by the jump button it was too easy to hit by mistake). It lives in the bar, so
--- it follows the bar's size and spot; it's made once the HUD has built the bar.
-local function phoneDropButton(onDrop: () -> ()): TextButton
-	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-	local bar = playerGui:FindFirstChild("ForestBar", true)
-	while not (bar and bar:IsA("GuiObject")) do
-		task.wait(0.5)
-		bar = playerGui:FindFirstChild("ForestBar", true)
-	end
-	local button = Instance.new("TextButton")
-	button.Name = "Drop"
-	button.Text = ""
-	button.AutoButtonColor = false
-	button.Visible = false
-	button.AnchorPoint = Vector2.new(0, 0.5)
-	button.Position = UDim2.new(1, DROP_BAR_GAP, 0.5, 0)
-	button.Size = UDim2.new(0, 0, 1, 0) -- the bar's height
-	button.AutomaticSize = Enum.AutomaticSize.X
-	button.BackgroundColor3 = Color3.fromRGB(28, 22, 16)
-	button.BackgroundTransparency = 0.2
-	button.Parent = bar
-	UIStyle.corner(button, 16)
-	UIStyle.stroke(button, 4, UIStyle.BLACK, true)
-	local pad = Instance.new("UIPadding")
-	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 18), UDim.new(0, 18)
-	pad.Parent = button
-	UIStyle.list(button, true, 0, Enum.HorizontalAlignment.Center).VerticalAlignment = Enum.VerticalAlignment.Center
-	UIStyle.text(button, "Drop", 28)
-	UIStyle.clicky(button)
-	button.Activated:Connect(onDrop)
-	return button
-end
-
 -- The drop hint, shown while you carry seeds. On a computer: small "Q to drop" text in the bottom right corner
 -- (2026-10-08, the user's ask: the big "Q Drop Seeds" bar in the middle made dropping look like the main action).
--- On phones: phoneDropButton, right of the Forest Bar.
+-- On phones: a round Drop button above, between Build and jump (dropSpot), the action's own touch button.
 local function bindDropping()
 	local drop = Remotes.event("DropSeeds")
 	local touch = UIStyle.isTouch()
 	local screen: ScreenGui? = nil
-	local phoneButton: TextButton? = nil
-	if touch then
-		task.spawn(function()
-			phoneButton = phoneDropButton(function()
-				if carriedOf(Players.LocalPlayer) > 0 then
-					drop:FireServer()
-				end
-			end)
-		end)
-	else
+	if not touch then
 		local gui = Instance.new("ScreenGui")
 		gui.Name = "DropSeeds"
 		gui.ResetOnSpawn = false
@@ -478,13 +593,15 @@ local function bindDropping()
 			if screen then
 				screen.Enabled = show
 			end
-			if phoneButton then
-				phoneButton.Visible = show
-			end
 			if show ~= bound then
 				bound = show
+				dropBound = show
 				if show then
-					ContextActionService:BindAction(DROP_ACTION, onDropAction, false, Enum.KeyCode.Q, Enum.KeyCode.ButtonY)
+					ContextActionService:BindAction(DROP_ACTION, onDropAction, touch, Enum.KeyCode.Q, Enum.KeyCode.ButtonY)
+					if touch then
+						ContextActionService:SetImage(DROP_ACTION, DROP_ICON)
+						placeNearJump(DROP_ACTION, DROP_SCALE, dropSpot)
+					end
 				else
 					ContextActionService:UnbindAction(DROP_ACTION)
 				end
@@ -495,6 +612,22 @@ local function bindDropping()
 end
 
 function CarryController.start()
+	-- A map swap changes the material of the bundles already being carried.
+	task.spawn(function()
+		local map = workspace:WaitForChild("Map")
+		map:GetAttributeChangedSignal("CurrentMap"):Connect(function()
+			local look = deckLook()
+			for _, orbit in orbits do
+				for _, acorn in orbit.acorns do
+					for _, piece in acorn.pieces do
+						if piece.part.Name == "Planks" then
+							piece.part.Color, piece.part.Material = look.Color, look.Material
+						end
+					end
+				end
+			end
+		end)
+	end)
 	folder = Instance.new("Folder")
 	folder.Name = "CarriedAcorns"
 	folder.Parent = workspace
@@ -522,6 +655,8 @@ function CarryController.start()
 	RunService.RenderStepped:Connect(step)
 	bindPlanting()
 	bindDropping()
+	task.spawn(autoPlace)
+	Remotes.event("LuckyPlanks").OnClientEvent:Connect(onLucky)
 end
 
 return CarryController

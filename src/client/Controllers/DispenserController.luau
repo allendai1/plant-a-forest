@@ -4,6 +4,8 @@
 -- trace the slide from the hopper down to the basket. When your Carried goes up near one, a few small acorns
 -- (copies of Assets.Acorn) roll down the markers' path, spinning, and drop into the basket. Only you see your
 -- own; at most MAX_ROLLING at once. Visual only.
+-- Also the plank pile's footing (2026-10-11, the user's call): you can jump onto its stacks (6.3 studs; a jump is 7.2)
+-- but not walk up them, so phones' auto-jump is off while you're right by Lobby.PlankPiles (it hopped players up it).
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -18,6 +20,7 @@ local PER_GRAB = 2 -- acorns per grab (more seeds in one grab still sends at mos
 local STAGGER = 0.12
 local MAX_ROLLING = 10
 local SPIN = 14 -- radians per second as they roll
+local PILE_MARGIN = 4 -- studs around the pile's footprint where auto-jump is off
 
 type Roll = { model: Model, path: { Vector3 }, lengths: { number }, total: number, started: number }
 
@@ -140,6 +143,23 @@ function DispenserController.start()
 		end
 	end)
 	RunService.RenderStepped:Connect(step)
+	task.spawn(function()
+		while true do
+			task.wait(0.2)
+			local character = localPlayer.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			local map = workspace:FindFirstChild("Map")
+			local lobby = map and map:FindFirstChild("Lobby")
+			local pile = lobby and lobby:FindFirstChild("PlankPiles")
+			if humanoid and root and root:IsA("BasePart") and pile and pile:IsA("Model") then
+				local box, size = pile:GetBoundingBox()
+				local p = box:PointToObjectSpace(root.Position)
+				local near = math.abs(p.X) <= size.X / 2 + PILE_MARGIN and math.abs(p.Z) <= size.Z / 2 + PILE_MARGIN
+				humanoid.AutoJumpEnabled = not near
+			end
+		end
+	end)
 end
 
 return DispenserController

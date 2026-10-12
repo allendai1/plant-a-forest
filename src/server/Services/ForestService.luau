@@ -1,6 +1,8 @@
 --!strict
--- ForestService: the hex grid and all plot state (docs/ARCHITECTURE.md section 3).
--- Builds the plots around the ForestCenter part, answers GetForest with the snapshot, handles
+-- ForestService: the bridge's slots and all their state (docs/ARCHITECTURE.md section 3). Since 2026-10-10 (Build
+-- Across the Grand Canyon) the "forest" is the bridge: a plot is a bridge slot, its seeds are planks, a ring is a row
+-- of slots and a forest is one bridge across the canyon (docs/notes/Grand Canyon game.md). The names stayed.
+-- Builds the slots out from the BridgeStart part (BridgeGrid), answers GetForest with the snapshot, handles
 -- PlantSeeds (validation, overflow, first-seed setup), opens the forest one row at a time, and sends changed
 -- plots to every client in one HexBatch every Forest.BatchSeconds. Each seed pays the planter coins (M5).
 -- When the last row fills it calls the onComplete callback (AwakeningService, M6); reset() empties it.
@@ -24,7 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
-local HexGrid = require(Shared.HexGrid)
+local BridgeGrid = require(Shared.BridgeGrid)
 local Remotes = require(Shared.Remotes)
 local Targeting = require(Shared.Targeting)
 local Trees = require(Shared.Trees)
@@ -44,13 +46,12 @@ type Plot = {
 	q: number,
 	r: number,
 	ring: number,
-	position: Vector3, -- hex center on the ground
+	position: Vector3, -- slot center at deck height
 	seeds: number,
 	species: number, -- 0 = none, else an index into Trees.Species
 	mutation: number, -- 0 = none
 	starterUserId: number, -- 0 = none
 	treeSeed: number, -- 0 = none
-	side: number, -- the forest section (1..6, between two walkway spokes): HexGrid.side
 	row: number, -- index into rows
 }
 
@@ -59,19 +60,15 @@ type Plot = {
 -- ring nearest their dispenser.
 type Row = { ring: number, plantable: number, finished: number }
 
-local CENTER_TAG = "ForestCenter"
-local WALK_FLOOR_TAG = "WalkFloor"
-local RAY_START_HEIGHT = 500 -- ground raycasts start this far above the ForestCenter
-local RAY_LENGTH = 1000
+local CENTER_TAG = "ForestCenter" -- the hub's center (the town side and the dispensers are found from it)
+local START_TAG = "BridgeStart" -- where the bridge leaves the rim (BridgeGrid)
 local MAX_TREE_SEED = 2 ^ 31 - 1
 
 local ForestService = {}
 
 local plots: { Plot } = {}
 local plotByKey: { [string]: number } = {}
--- The old forest outside the field (GameConfig.Field, 2026-10-09): q, r and ground height of every spot on the town's
--- side that would be a plot, sent with the snapshot; clients stand full-grown trees there (ForestController).
-local backdrop: { number } = {}
+local backdrop: { number } = {} -- the old forest's trees outside the field: none on the bridge (Snapshot.backdrop)
 local rows: { Row } = {}
 local dirty: { [number]: boolean } = {}
 local dirtyCount = 0
@@ -80,6 +77,7 @@ local totalSeeds = 0
 local openRow = 1 -- index into rows; #rows + 1 once the forest is complete
 local seedsPerHex = 0
 local center: BasePart
+local bridgeFrame: CFrame -- the BridgeStart part's CFrame (BridgeGrid)
 local forestState: Folder
 local rng = Random.new()
 local onComplete: (() -> ())? = nil
@@ -98,104 +96,46 @@ local specialsPlanted: { [number]: number } = {} -- special seeds each player pl
 local tierIndex = 1 -- index into GameConfig.Tiers: the world this forest is in
 local ringPlanters: { [number]: { [number]: boolean } } = {} -- row -> UserIds who planted in it (RingsHelped)
 
-local function findCenter(): BasePart
-	local tagged = CollectionService:GetTagged(CENTER_TAG)
-	assert(#tagged == 1, `ForestService: expected exactly one part tagged "{CENTER_TAG}", found {#tagged}`)
+local function findTagged(tag: string): BasePart
+	local tagged = CollectionService:GetTagged(tag)
+	assert(#tagged == 1, `ForestService: expected exactly one part tagged "{tag}", found {#tagged}`)
 	local part = tagged[1]
-	assert(part:IsA("BasePart"), `ForestService: the "{CENTER_TAG}" instance must be a BasePart`)
+	assert(part:IsA("BasePart"), `ForestService: the "{tag}" instance must be a BasePart`)
 	return part
 end
 
--- Center-only no-plant check: is the point inside the part's top-down footprint?
-local function insideFootprint(part: BasePart, point: Vector3): boolean
-	local p = part.CFrame:PointToObjectSpace(point)
-	return math.abs(p.X) <= part.Size.X / 2 and math.abs(p.Z) <= part.Size.Z / 2
-end
-
+-- One slot per column and row, row by row out from the rim. The deck is level: every slot is at the frame's height.
 local function buildPlots()
 	local grid = GameConfig.Grid
-
-	local noPlant: { BasePart } = {}
-	for _, inst in CollectionService:GetTagged(grid.NoPlantTag) do
-		if inst:IsA("BasePart") then
-			table.insert(noPlant, inst)
-		end
-	end
-
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local exclude: { Instance } = { center }
-	for _, part in noPlant do
-		table.insert(exclude, part)
-	end
-	-- The invisible floor that bridges the seams between tiles (M6b) sits at tile height; skip it.
-	for _, floor in CollectionService:GetTagged(WALK_FLOOR_TAG) do
-		table.insert(exclude, floor)
-	end
-	params.FilterDescendantsInstances = exclude
-
-	for i, ring in HexGrid.rings(grid.HubRings + grid.ForestRings) do
-		local radius = i - 1
-		if radius > grid.HubRings then
-			for j, hex in ring do
-				local flat = HexGrid.toWorld(hex.q, hex.r, grid.HexSize, center.Position)
-				local offset = flat - center.Position
-				-- Outside the field (GameConfig.Field): no plot, a tree of the old forest instead.
-				local outside = not GameConfig.inField(math.deg(math.atan2(offset.Z, offset.X)))
-				local blocked = false
-				for _, part in noPlant do
-					if insideFootprint(part, flat) then
-						blocked = true
-						break
-					end
-				end
-				local hit = if blocked
-					then nil
-					else workspace:Raycast(
-						flat + Vector3.new(0, RAY_START_HEIGHT, 0),
-						Vector3.new(0, -RAY_LENGTH, 0),
-						params
-					)
-				-- No ground under the hex, or terrain water: not plantable.
-				if hit and hit.Material ~= Enum.Material.Water and outside then
-					table.insert(backdrop, hex.q)
-					table.insert(backdrop, hex.r)
-					table.insert(backdrop, hit.Position.Y)
-				elseif hit and hit.Material ~= Enum.Material.Water then
-					local index = #plots + 1
-					plots[index] = {
-						index = index,
-						q = hex.q,
-						r = hex.r,
-						ring = radius,
-						position = Vector3.new(flat.X, hit.Position.Y, flat.Z),
-						seeds = 0,
-						species = 0,
-						mutation = 0,
-						starterUserId = 0,
-						treeSeed = 0,
-						side = (j - 1) // radius + 1, -- the same as HexGrid.side(hex.q, hex.r)
-						row = 0,
-					}
-					plotByKey[HexGrid.key(hex.q, hex.r)] = index
-				end
-			end
+	for r = 1, grid.Rows do
+		for q = 1, grid.Columns do
+			local index = #plots + 1
+			plots[index] = {
+				index = index,
+				q = q,
+				r = r,
+				ring = r,
+				position = BridgeGrid.toWorld(q, r, bridgeFrame),
+				seeds = 0,
+				species = 0,
+				mutation = 0,
+				starterUserId = 0,
+				treeSeed = 0,
+				row = 0,
+			}
+			plotByKey[BridgeGrid.key(q, r)] = index
 		end
 	end
 end
 
--- This server's ring order: from the outer ring in (true) or from the hub out (false). GameConfig.Grid.OutsideIn,
--- or a weighted pick per server while the layout A/B test runs (GameConfig.Experiments.LayoutTest).
-local outsideIn = GameConfig.Grid.OutsideIn
 local round = 1 -- this server's forest number (GameConfig.Rounds)
 local wholeRound = false -- every ring of this small round is open at once (Rounds.OpenWholeRound)
 
--- Orders the rows: one per ring, outside-in (outsideIn) or inside-out, only the round's rings (GameConfig.Rounds).
+-- Orders the rows: one per bridge row, from the rim out, only the round's rows (GameConfig.Rounds).
 -- Plots outside the round get row 0 and never open.
 local function buildRows()
 	table.clear(rows)
-	local grid = GameConfig.Grid
-	local inner, outer = grid.HubRings + 1, grid.HubRings + grid.ForestRings
+	local inner, outer = 1, GameConfig.Grid.Rows
 	local limit = if GameConfig.Rounds.Enabled then GameConfig.Rounds.Rings[round] or math.huge else math.huge
 	local plantable: { [number]: number } = {}
 	for _, plot in plots do
@@ -203,7 +143,7 @@ local function buildRows()
 	end
 	local index: { [number]: number } = {}
 	for i = 0, outer - inner do
-		local ring = if outsideIn then outer - i else inner + i
+		local ring = inner + i
 		local count = plantable[ring]
 		if count and #rows < limit then -- a ring with nothing to plant is skipped
 			table.insert(rows, { ring = ring, plantable = count, finished = 0 })
@@ -235,7 +175,7 @@ local function publishRound()
 	forestState:SetAttribute("WholeRound", wholeRound)
 	forestState:SetAttribute("LastRing", if small and #rows > 0 then rows[#rows].ring else 0)
 	-- Few values for the analytics fields: every full-size round is "Round 4+".
-	local layout = if outsideIn then "OuterFirst" else "InnerFirst"
+	local layout = "Bridge"
 	if rounds.Enabled then
 		layout = if small then `Round {round}` else `Round {#rounds.Rings + 1}+`
 	end
@@ -243,7 +183,7 @@ local function publishRound()
 end
 
 local function plotAt(q: number, r: number): Plot?
-	local index = plotByKey[HexGrid.key(q, r)]
+	local index = plotByKey[BridgeGrid.key(q, r)]
 	return if index then plots[index] else nil
 end
 
@@ -266,7 +206,6 @@ local function isOpen(plot: Plot): boolean
 		plot.ring,
 		plot.seeds >= seedsPerHex,
 		if row then row.ring else 0,
-		outsideIn,
 		GameConfig.Grid.AheadRings,
 		isGrownAt
 	)
@@ -308,7 +247,7 @@ local function advanceRows()
 			for userId in planters do
 				local planter = Players:GetPlayerByUserId(userId)
 				if planter then
-					DataService.add(planter, "RingsHelped", 1) -- the "Help finish a ring" quest
+					DataService.add(planter, "RingsHelped", 1) -- the "Help finish a row" quest
 				end
 			end
 		end
@@ -357,7 +296,7 @@ end
 local function finish(plot: Plot, player: Player?)
 	if player then
 		Analytics.treeFinished(player) -- they planted its last seed
-		DataService.add(player, "TreesFinished", 1) -- the "Grow 3 trees" quest
+		DataService.add(player, "TreesFinished", 1) -- the "Finish 3 bridge sections" quest
 		local profile = DataService.get(player)
 		if profile and profile.FirstTreeDone == 0 then
 			-- Their first tree ever: the client celebrates when FirstTreeDone turns 1 (TutorialController).
@@ -439,9 +378,7 @@ local function plantTarget(player: Player, q: unknown, r: unknown): (Plot?, Base
 	if typeof(q) ~= "number" or typeof(r) ~= "number" then
 		return nil, nil
 	end
-	-- Whole numbers inside the grid; this also rejects NaN (NaN ~= NaN) and infinities.
-	local outer = GameConfig.Grid.HubRings + GameConfig.Grid.ForestRings
-	if q ~= q or r ~= r or math.abs(q) > outer or math.abs(r) > outer or q % 1 ~= 0 or r % 1 ~= 0 then
+	if not BridgeGrid.valid(q, r) then -- whole numbers inside the grid, no NaN or infinities
 		return nil, nil
 	end
 	local target = plotAt(q, r)
@@ -493,6 +430,8 @@ local function onPlantSpecial(player: Player, seedId: unknown, q: unknown, r: un
 	Analytics.forestPlanted(player, 1)
 end
 
+local luckyRandom = Random.new()
+
 local function onPlantSeeds(player: Player, q: unknown, r: unknown)
 	local planting = GameConfig.Planting
 	local perSecond = planting.PlantRateSlack / GameConfig.pressSeconds(PassService.handsSpeed(player))
@@ -511,23 +450,47 @@ local function onPlantSeeds(player: Player, q: unknown, r: unknown)
 
 	local remaining = math.min(EconomyService.upgradeValue(player, "BulkPlant"), carried) -- Bulk Plant
 	local planted = plantInto(target, player, remaining)
+	local into: { [Plot]: number } = { [target] = planted } -- planks placed in each plot, for Lucky Planks
 	remaining -= planted
 	if remaining > 0 then
 		-- Overflow: the next-closest open plots to the player, within range.
-		local grid = GameConfig.Grid
-		for _, candidate in Targeting.openNear(root.Position, range, grid.HexSize, center.Position, isOpenAt) do
+		for _, candidate in Targeting.openNear(root.Position, range, bridgeFrame, isOpenAt) do
 			local plot = plotAt(candidate.q, candidate.r)
 			if plot then
 				local added = plantInto(plot, player, remaining)
 				planted += added
 				remaining -= added
+				into[plot] = (into[plot] or 0) + added
 			end
 			if remaining <= 0 then
 				break
 			end
 		end
 	end
-	CarryService.take(player, planted)
+	-- Lucky Planks: each plank placed may come back to the player's hands (it still counts as placed and paid). The
+	-- client gets where each lucky one was placed, for the pop: { position, count, position, count, ... }.
+	local chance = EconomyService.upgradeValue(player, "LuckyPlanks")
+	local lucky = 0
+	local spots: { any } = {} -- position, count, position, count, ...
+	if chance > 0 then
+		for plot, added in into do
+			local here = 0
+			for _ = 1, added do
+				if luckyRandom:NextNumber() < chance then
+					here += 1
+				end
+			end
+			if here > 0 then
+				table.insert(spots, plot.position)
+				table.insert(spots, here)
+				lucky += here
+			end
+		end
+	end
+	CarryService.take(player, planted - lucky)
+	if lucky > 0 then
+		Remotes.event("LuckyPlanks"):FireClient(player, spots)
+	end
 	if planted > 0 then
 		Analytics.forestPlanted(player, planted)
 	end
@@ -660,7 +623,25 @@ function ForestService.setOnComplete(callback: () -> ())
 end
 
 -- Empties every plot and opens the first row again (MVP: tier 1 again). Clients get it as one HexBatch.
+-- Everyone out past the near rim (on the bridge or across on the far rim, where the Spring is) goes back to camp's
+-- spawn before the bridge is cleared: the far rim has no other way back.
+local function bringEveryoneBack()
+	local pad = workspace:FindFirstChildWhichIsA("SpawnLocation")
+	if not pad then
+		return
+	end
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if character and root and root:IsA("BasePart") and bridgeFrame:PointToObjectSpace(root.Position).Z < -2 then
+			root.AssemblyLinearVelocity = Vector3.zero
+			character:PivotTo(pad.CFrame + Vector3.new(0, pad.Size.Y / 2 + 4, 0))
+		end
+	end
+end
+
 function ForestService.reset()
+	bringEveryoneBack()
 	for _, plot in plots do
 		plot.seeds = 0
 		plot.species = 0
@@ -768,7 +749,8 @@ function ForestService.init()
 	if preview then
 		preview:Destroy()
 	end
-	center = findCenter()
+	center = findTagged(CENTER_TAG)
+	bridgeFrame = findTagged(START_TAG).CFrame
 	-- The town's side (GameConfig.Field): its trails lead nowhere now (2026-10-09, the user's ask), so they go for this
 	-- server: the visible trail, its no-planting strip and the bridge at its end (the floating islet stays). Before
 	-- the plots, so the old forest fills their spots too.
@@ -811,11 +793,6 @@ function ForestService.init()
 			end
 		end
 	end
-	if GameConfig.Rounds.Enabled then
-		outsideIn = false -- rounds grow from the hub out
-	elseif GameConfig.Experiments.LayoutTest then
-		outsideIn = rng:NextNumber() < GameConfig.Experiments.OuterFirstShare
-	end
 	buildRows()
 
 	local tier = GameConfig.Tiers[1]
@@ -830,15 +807,20 @@ function ForestService.init()
 	forestState:SetAttribute("Target", target)
 	forestState:SetAttribute("SeedsPerHex", seedsPerHex)
 	-- The ring order, for the clients' ring numbers; the round and its rings (and Layout, for every analytics event).
-	forestState:SetAttribute("OutsideIn", outsideIn)
+	forestState:SetAttribute("OutsideIn", false) -- the bridge always grows from the rim out
 	publishRound()
 	forestState:SetAttribute("OpenRow", openRowValue())
 	forestState:SetAttribute("RingDone", 0)
 	forestState:SetAttribute("RingTrees", if rows[openRow] then rows[openRow].plantable else 0)
 	forestState:SetAttribute("NextRingDone", 0)
 	forestState:SetAttribute("NextRingTrees", 0)
-	-- Clients place tiles from this, so they don't depend on the ForestCenter part streaming in.
+	-- Clients place slots from these, so they don't depend on the parts streaming in. Center is the hub's.
 	forestState:SetAttribute("Center", center.Position)
+	forestState:SetAttribute("BridgeFrame", bridgeFrame)
+	-- The Spring, on the far rim past a full bridge (Awakening.SpringBeyondStuds).
+	local grid = GameConfig.Grid
+	local beyond = grid.Rows * grid.SlotStuds + GameConfig.Awakening.SpringBeyondStuds
+	forestState:SetAttribute("SpringCenter", bridgeFrame:PointToWorldSpace(Vector3.new(0, 0, -beyond)))
 	forestState:SetAttribute("ServerTreeBoost", 1)
 	forestState.Parent = ReplicatedStorage
 
@@ -865,14 +847,9 @@ function ForestService.init()
 		onJoin(player)
 	end
 
-	local perRing = {}
-	for _, row in rows do
-		table.insert(perRing, `{row.ring}:{row.plantable}`)
-	end
 	print(
-		`[ForestService] {#plots} plantable plots, target {target} ({seedsPerHex} seeds per hex), `
-			.. `{#rows} rings, built in {math.round((os.clock() - started) * 1000)} ms. `
-			.. `Plots per ring: {table.concat(perRing, " ")}`
+		`[ForestService] {#plots} bridge slots, target {target} ({seedsPerHex} planks per slot), `
+			.. `{#rows} rows, built in {math.round((os.clock() - started) * 1000)} ms`
 	)
 end
 

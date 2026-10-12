@@ -7,10 +7,14 @@
 -- The character's aura too (2026-10-08): every ParticleEmitter named Aura... (Aura, AuraOutline) on its NPC (the green water aura on the
 -- Forest Ranger, set up and edited in Studio) is copied onto the same body part of the owner's character.
 -- An NPC of each character (a model in Workspace.Map, dressed in Studio) stands by the upgrade shop's ring with a
--- prompt that sells its pass, and a copy goes to Assets.Outfits.<Outfit>Preview for the Robux shop's character cards.
+-- prompt that sells its pass (and one that sells it for coins), and a copy goes to Assets.Outfits.<Outfit>Preview for the Robux shop's character cards.
 -- The gnome (2026-10-09, GameConfig.Gnome): everyone's avatar is replaced by the forest gnome (the player's own avatar
 -- isn't loaded at all: StarterPlayer.LoadCharacterAppearance off) on every spawn, before the character outfit goes on
 -- top. Owning a character outfit leaves the gnome's cap off for that character's own hat.
+-- The crew hard hat shows the player's rank (2026-10-11, the user's ask; GameConfig.Ranks[].Hat): its color and
+-- material are set on every spawn and on a rank-up; the top rank's is tagged RainbowHat for the clients to cycle.
+-- Players can wear any rank's hat they've reached (the Hats window, HatsController): EquipHat saves the pick as
+-- EquippedHat (0 = always the newest), checked against their bridges.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -19,8 +23,12 @@ local ServerStorage = game:GetService("ServerStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local DataService = require(script.Parent.DataService)
+local Guard = require(script.Parent.Parent.Guard)
 
 local TAG = "Outfit"
+local RAINBOW_HAT_TAG = "RainbowHat"
 local AURA_TAG = "OutfitAura"
 local STASH = "OwnClothes"
 
@@ -93,7 +101,22 @@ local function dress(player: Player)
 		return
 	end
 	for _, item in outfit:GetChildren() do
-		if item:IsA("Accessory") and not character:FindFirstChild(item.Name) then
+		local body = item:GetAttribute("BodyPart")
+		local offset = item:GetAttribute("Offset")
+		if item:IsA("BasePart") and typeof(body) == "string" and typeof(offset) == "CFrame" then
+			-- A mesh armor piece (the God of Hammers, 2026-10-11): welded to its body part at its offset.
+			local part = character:FindFirstChild(body)
+			if part and part:IsA("BasePart") and not character:FindFirstChild(item.Name) then
+				local copy = item:Clone()
+				copy:SetAttribute("Outfit", want)
+				CollectionService:AddTag(copy, TAG)
+				copy.CFrame = part.CFrame * offset
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0, weld.Part1 = part, copy
+				weld.Parent = copy
+				copy.Parent = character
+			end
+		elseif item:IsA("Accessory") and not character:FindFirstChild(item.Name) then
 			local copy = item:Clone()
 			copy:SetAttribute("Outfit", want)
 			CollectionService:AddTag(copy, TAG)
@@ -113,7 +136,8 @@ local function dress(player: Player)
 	end
 end
 
--- The forest gnome's whole look (GameConfig.Gnome), without the cap when a character outfit brings its own hat.
+-- The gnome crew member's whole look (GameConfig.Gnome), without the hard hat and vest when a character outfit brings its
+-- own hat.
 local function gnome(withCap: boolean): HumanoidDescription
 	local g = GameConfig.Gnome
 	local look = Instance.new("HumanoidDescription")
@@ -122,15 +146,50 @@ local function gnome(withCap: boolean): HumanoidDescription
 	for _, part in { "HeadColor", "TorsoColor", "LeftArmColor", "RightArmColor", "LeftLegColor", "RightLegColor" } do
 		(look :: any)[part] = g.Skin
 	end
+	look.Pants = g.Pants
 	local accessories = {
-		{ AccessoryType = Enum.AccessoryType.Face, AssetId = g.Beard, IsLayered = false },
 		{ AccessoryType = Enum.AccessoryType.Eyebrow, AssetId = g.Brows, IsLayered = false },
 	}
-	if withCap then
+	if withCap then -- the crew's hard hat and vest; a character outfit brings its own hat and clothes instead
 		table.insert(accessories, { AccessoryType = Enum.AccessoryType.Hat, AssetId = g.Hat, IsLayered = false })
+		table.insert(accessories, { AccessoryType = Enum.AccessoryType.Front, AssetId = g.Vest, IsLayered = false })
 	end
 	look:SetAccessories(accessories, true)
 	return look
+end
+
+-- The crew hard hat in the player's rank's look (nothing when a character outfit replaced it): its two-color texture and
+-- material (GameConfig.Ranks[].Hat).
+local function paintHat(player: Player)
+	local character = player.Character
+	local forests = player:GetAttribute("ForestsCompleted")
+	local reached = GameConfig.rankIndexFor(if typeof(forests) == "number" then forests else 0)
+	local picked = player:GetAttribute("EquippedHat")
+	local index = if typeof(picked) == "number" and picked >= 1 and picked <= reached then picked else reached
+	local look = GameConfig.Ranks[index].Hat
+	local hat: MeshPart? = nil
+	for _, item in if character then character:GetChildren() else {} do
+		local handle = item:IsA("Accessory") and item:FindFirstChild("Handle")
+		if
+			handle
+			and handle:IsA("MeshPart")
+			and handle:FindFirstChild("HatAttachment")
+			and not CollectionService:HasTag(item, TAG)
+		then
+			hat = handle
+		end
+	end
+	if not hat then
+		return
+	end
+	hat.TextureID = look.Texture
+	hat.Color = Color3.new(1, 1, 1)
+	hat.Material = look.Material or Enum.Material.Plastic
+	if look and look.Rainbow then
+		CollectionService:AddTag(hat, RAINBOW_HAT_TAG)
+	else
+		CollectionService:RemoveTag(hat, RAINBOW_HAT_TAG)
+	end
 end
 
 -- The gnome first (it replaces everything worn), then the character outfit on top.
@@ -145,6 +204,7 @@ local function dressAll(player: Player)
 	end
 	if player.Character == character then -- not respawned while the look loaded
 		dress(player)
+		paintHat(player)
 	end
 end
 
@@ -159,12 +219,34 @@ local function onPlayerAdded(player: Player)
 	player:GetAttributeChangedSignal("HandsSpeed"):Connect(function()
 		dressAll(player)
 	end)
+	player:GetAttributeChangedSignal("ForestsCompleted"):Connect(function()
+		paintHat(player) -- a rank-up
+	end)
+	player:GetAttributeChangedSignal("EquippedHat"):Connect(function()
+		paintHat(player)
+	end)
 	if player.Character then
 		task.spawn(dressAll, player)
 	end
 end
 
+-- EquipHat: wear a rank's hat the player has reached (0 = always the newest).
+local function onEquipHat(player: Player, index: unknown)
+	if not Guard.allow(player, "EquipHat", 4, 4) then
+		return
+	end
+	local profile = DataService.get(player)
+	if not profile or typeof(index) ~= "number" or index ~= math.floor(index) then
+		return
+	end
+	if index ~= 0 and (index < 1 or index > GameConfig.rankIndexFor(profile.ForestsCompleted)) then
+		return -- not reached
+	end
+	DataService.set(player, "EquippedHat", index)
+end
+
 function OutfitService.init()
+	Remotes.event("EquipHat").OnServerEvent:Connect(onEquipHat)
 	if GameConfig.Gnome.Enabled then
 		StarterPlayer.LoadCharacterAppearance = false -- the gnome replaces the avatar; don't load it first
 	end
@@ -225,6 +307,21 @@ local function setUpNpcs()
 		prompt.RequiresLineOfSight = false
 		prompt:SetAttribute("PassId", pass.PassId)
 		prompt.Parent = root
+		if pass.CoinPrice then
+			-- The coin route (2026-10-11): a second prompt under the first, on its own key. RobuxShopController answers it
+			-- (CoinCharacter = the HandsPasses index) and the server checks the buy (EconomyService BuyCharacter).
+			local coins = Instance.new("ProximityPrompt")
+			coins.ObjectText = ""
+			coins.ActionText = `Buy for {pass.CoinPrice // 1000}K coins`
+			coins.Style = Enum.ProximityPromptStyle.Custom
+			coins.KeyboardKeyCode = Enum.KeyCode.F -- F, the user's pick (was C)
+			coins.GamepadKeyCode = Enum.KeyCode.ButtonY
+			coins.MaxActivationDistance = 10
+			coins.RequiresLineOfSight = false
+			coins.UIOffset = Vector2.new(0, -110) -- one prompt panel lower
+			coins:SetAttribute("CoinCharacter", table.find(GameConfig.HandsPasses, pass))
+			coins.Parent = root
+		end
 	end
 end
 

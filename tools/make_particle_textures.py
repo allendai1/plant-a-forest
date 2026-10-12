@@ -194,6 +194,21 @@ def lightning(path):
     glow.resize((w, h), Image.LANCZOS).save(path)
 
 
+
+def hazard_tape(path):
+    """The God of Hammers' running trail (2026-10-11): diagonal black and white stripes, tiling along the trail. White
+    takes the trail's Color, so the game can make it black and yellow instead."""
+    k, period = 4, 64  # supersampling, stripe period in pixels
+    big = Image.new("RGBA", (SIZE * k, SIZE * k), (0, 0, 0, 255))
+    d = ImageDraw.Draw(big)
+    p = period * k
+    for i in range(-2, SIZE * k // p + 3):
+        x = i * p
+        d.polygon([(x, 0), (x + p / 2, 0), (x + p / 2 + SIZE * k, SIZE * k), (x + SIZE * k, SIZE * k)],
+                  fill=(255, 255, 255, 255))
+    big.resize((SIZE, SIZE), Image.LANCZOS).save(path)
+
+
 if __name__ == "__main__":
     petal("assets/textures/petal.png")
     sparkle("assets/textures/sparkle.png")
@@ -205,3 +220,4 @@ if __name__ == "__main__":
     streak("assets/textures/streak.png")
     sun_rays("assets/textures/sun_rays.png")
     lightning("assets/textures/lightning.png")
+    hazard_tape("assets/textures/hazard_tape.png")

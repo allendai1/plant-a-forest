@@ -5,6 +5,10 @@ The shared notebook for this project: the user writes here in Obsidian, and Clau
 ## Notes
 
 - [Open items](Open%20items.md): what's still left to decide, check or save (start here)
+- [Grand Canyon game](Grand%20Canyon%20game.md): the next game, Build Across the Grand Canyon!, in the same place on the `grand-canyon` branch: decisions, the bridge loop, build order
+- [Economy review](Economy%20review.md): everything coins and Robux buy, what players earn, prices to fix now (Robux Bulk levels, product names, unused products) and later
+- [Progression review](Progression%20review.md): how long bridges take by server size, where training stops paying, holding E for big loads; recommendations not yet applied
+- [Visitable landmarks](Visitable%20landmarks.md): future feature, walk to Vulcan's Throne and down the Lava Falls Trail; saved for after launch
 - [Game concept (Norse)](Game%20concept%20(Norse).md): the proposed full game: Yggdrasil, the nine realms, Valhalla, Ragnarok rebirth, runes, your sapling (not decided)
 - [Trojan Horse idea](Trojan%20Horse%20idea.md): a new-game idea: a voxel Trojan Horse built block by block; a full-size look-only model is in the place
 - [Voxel World Tree idea](Voxel%20World%20Tree%20idea.md): Build the World Tree block by block, endlessly upward; a 480-stud look-only model is in the place

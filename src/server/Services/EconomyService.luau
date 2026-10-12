@@ -3,10 +3,13 @@
 -- BuyUpgrade: the player must be standing in the shop ring by the altar; the server checks the upgrade,
 -- its level and the price, then takes the coins and raises the level in one step (no yields between).
 -- Other services read a player's upgrades through upgradeValue() and plantRange().
--- ClaimFreeGift (M10): FreeGiftCoins once per player ever. The client sends it after Roblox's Favorite prompt
--- reports a favorite (the server can't check favorites itself, so it trusts that; it's only 500 coins, once).
+-- ClaimFreeGift: the free gift (coins, Strength, Speed) once per player ever, for favoriting and joining the group
+-- (the server checks the group; it can't check favorites, so it trusts that). See onClaimFreeGift.
 -- BuySeed (docs/plans/SeedShop.md): in the seed stall's ring, a seed in this restock's stock that the player hasn't
 -- bought out yet, for its coin price, into their seed bag.
+-- BuyCharacter (2026-10-11, the user's call): a character (GameConfig.HandsPasses) for its CoinPrice instead of its pass,
+-- from anywhere; each needs the one before it, owned either way. Saved as CharacterBought (the highest index), which
+-- PassService counts like the pass.
 
 local CollectionService = game:GetService("CollectionService")
 local GroupService = game:GetService("GroupService")
@@ -16,6 +19,7 @@ local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
 local Remotes = require(Shared.Remotes)
 local DataService = require(script.Parent.DataService)
+local PassService = require(script.Parent.PassService)
 local Guard = require(script.Parent.Parent.Guard)
 local Analytics = require(script.Parent.Parent.Analytics)
 
@@ -27,6 +31,7 @@ local LEVEL_KEYS: { [string]: DataService.StatKey } = {
 	BulkPickup = "BulkPickupLevel",
 	BulkPlant = "BulkPlantLevel",
 	PlantingRange = "PlantingRangeLevel",
+	LuckyPlanks = "LuckyPlanksLevel",
 }
 
 local EconomyService = {}
@@ -116,6 +121,50 @@ local function onBuySeed(player: Player, seedId: unknown)
 	Analytics.custom(player, "SeedBought", def.Id)
 end
 
+local function onBuyCharacter(player: Player, index: unknown)
+	if not Guard.allow(player, "BuyCharacter", 1, 2) then
+		return
+	end
+	if typeof(index) ~= "number" or index ~= math.floor(index) then
+		return
+	end
+	local step = GameConfig.HandsPasses[index]
+	local profile = DataService.get(player)
+	if not (step and step.CoinPrice and profile) or not table.find(GameConfig.availableHandsPasses(), step) then
+		return
+	end
+	if PassService.ownsCharacter(player, index) then
+		return -- already theirs
+	end
+	if index > 1 and not PassService.ownsCharacter(player, index - 1) then
+		return -- the character before it first
+	end
+	if profile.Coins < step.CoinPrice then
+		return
+	end
+	DataService.set(player, "Coins", profile.Coins - step.CoinPrice)
+	DataService.set(player, "CharacterBought", math.max(profile.CharacterBought, index))
+	Analytics.spent(player, step.CoinPrice, `Character_{step.Outfit}`)
+end
+
+-- ClaimFreeGift (one gift since 2026-10-11, the user's ask: like, favorite, join): FreeGiftCoins, FreeGiftStrength and
+-- FreeGiftSpeed once per player ever.
+-- The client sends it after Roblox's favorite prompt worked and the player is in the group. Likes and favorites can't
+-- be checked by a game, so those are on trust; the membership is looked up here (GetGroupsAsync, not the cached
+-- IsInGroup, so a join made a moment ago counts).
+local function inGroup(player: Player): boolean
+	local ok, groups = pcall(GroupService.GetGroupsAsync, GroupService, player.UserId)
+	if not ok or typeof(groups) ~= "table" then
+		return false
+	end
+	for _, group in groups do
+		if typeof(group) == "table" and group.Id == GameConfig.Economy.GroupId then
+			return true
+		end
+	end
+	return false
+end
+
 local function onClaimFreeGift(player: Player)
 	local rate = GameConfig.Economy.GiftRate
 	if not Guard.allow(player, "ClaimFreeGift", rate.PerSecond, rate.Burst) then
@@ -125,40 +174,14 @@ local function onClaimFreeGift(player: Player)
 	if not profile or profile.FreeGiftClaimed ~= 0 then
 		return
 	end
-	DataService.set(player, "FreeGiftClaimed", 1)
-	DataService.add(player, "Coins", GameConfig.Economy.FreeGiftCoins)
-	Analytics.earned(player, GameConfig.Economy.FreeGiftCoins, "FreeGift", Enum.AnalyticsEconomyTransactionType.Onboarding)
-end
-
--- ClaimGroupGift (2026-10-08): GroupGiftCoins once per player ever, if they're in the group. The client asks after
--- Roblox's join-group prompt; the server looks the membership up itself (GetGroupsAsync, not the cached IsInGroup,
--- so a join made a moment ago counts).
-local function onClaimGroupGift(player: Player)
-	local rate = GameConfig.Economy.GiftRate
-	if not Guard.allow(player, "ClaimGroupGift", rate.PerSecond, rate.Burst) then
-		return
-	end
-	local profile = DataService.get(player)
-	if not profile or profile.GroupGiftClaimed ~= 0 then
-		return
-	end
-	local ok, groups = pcall(GroupService.GetGroupsAsync, GroupService, player.UserId)
-	if not ok or typeof(groups) ~= "table" then
-		return
-	end
-	local member = false
-	for _, group in groups do
-		if typeof(group) == "table" and group.Id == GameConfig.Economy.GroupId then
-			member = true
-			break
-		end
-	end
-	if not member or DataService.get(player) ~= profile or profile.GroupGiftClaimed ~= 0 then
+	if not inGroup(player) or DataService.get(player) ~= profile or profile.FreeGiftClaimed ~= 0 then
 		return -- not in it, or they left or claimed while we were looking
 	end
-	DataService.set(player, "GroupGiftClaimed", 1)
-	DataService.add(player, "Coins", GameConfig.Economy.GroupGiftCoins)
-	Analytics.earned(player, GameConfig.Economy.GroupGiftCoins, "GroupGift", Enum.AnalyticsEconomyTransactionType.Onboarding)
+	DataService.set(player, "FreeGiftClaimed", 1)
+	DataService.add(player, "Coins", GameConfig.Economy.FreeGiftCoins)
+	DataService.add(player, "Strength", GameConfig.Economy.FreeGiftStrength)
+	DataService.add(player, "Speed", GameConfig.Economy.FreeGiftSpeed)
+	Analytics.earned(player, GameConfig.Economy.FreeGiftCoins, "FreeGift", Enum.AnalyticsEconomyTransactionType.Onboarding)
 end
 
 function EconomyService.init()
@@ -174,8 +197,8 @@ function EconomyService.init()
 	end
 	Remotes.event("BuyUpgrade").OnServerEvent:Connect(onBuyUpgrade)
 	Remotes.event("ClaimFreeGift").OnServerEvent:Connect(onClaimFreeGift)
-	Remotes.event("ClaimGroupGift").OnServerEvent:Connect(onClaimGroupGift)
 	Remotes.event("BuySeed").OnServerEvent:Connect(onBuySeed)
+	Remotes.event("BuyCharacter").OnServerEvent:Connect(onBuyCharacter)
 end
 
 return EconomyService

@@ -1,7 +1,8 @@
 --!strict
 -- AwakeningService: what happens when the forest is complete (docs/plans/M6.md).
 -- Everyone online who put Stats.ForestCreditSeeds acorns into this forest (ForestService.hasForestCredit, the
--- user's rule since 2026-10-07; AFK players and late joiners get nothing) gets RewardCoins and +1 ForestsCompleted;
+-- user's rule since 2026-10-07; AFK players and late joiners get nothing) gets RewardCoins (times the canyon's CoinMultiplier) and +1 ForestsCompleted
+-- (+2 with the Builderman pass since 2026-10-10: PassService.bridgeMultiplier);
 -- the others are told how many they planted. The spring multiplier is rolled, and
 -- AwakeningEndsAt marks the end of the cutscene plus the break (clients play both from it). Break time bought
 -- with Robux (Awakening.BreakTime, ProductService) and the Studio test panel call extend(). When the break ends,
@@ -12,7 +13,8 @@
 -- (the last one), and the world pick: PickedTier (0 = none yet), PickedBy, Picks (a count for the banner).
 -- Worlds: when the break ends, a bought pick starts at once (no roulette). Otherwise the roulette rolls by Weight:
 -- ForestState NextTier (its index) and TierRolls (a count clients watch to play the roulette); after
--- Roulette.SpinSeconds + HoldSeconds the forest resets as that tier.
+-- Roulette.SpinSeconds + HoldSeconds the forest resets as that tier. A canyon on another map is swapped in first
+-- (MapService, Tiers[].Map, 2026-10-11).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,6 +24,8 @@ local GameConfig = require(Shared.GameConfig)
 local Remotes = require(Shared.Remotes)
 local DataService = require(script.Parent.DataService)
 local ForestService = require(script.Parent.ForestService)
+local MapService = require(script.Parent.MapService)
+local PassService = require(script.Parent.PassService)
 local Analytics = require(script.Parent.Parent.Analytics)
 
 local CHECK_SECONDS = 0.25
@@ -72,6 +76,15 @@ local function begin()
 	local a = GameConfig.Awakening
 	Analytics.forestCompleted()
 	Analytics.breakStarted()
+	-- The reward, times the finished canyon's coin multiplier.
+	local tierId = forestState:GetAttribute("TierId")
+	local multiplier = 1
+	for _, tier in GameConfig.Tiers do
+		if tier.Id == tierId then
+			multiplier = tier.CoinMultiplier
+		end
+	end
+	local reward = a.RewardCoins * multiplier
 	for _, player in Players:GetPlayers() do
 		if not ForestService.hasForestCredit(player) then
 			local planted = player:GetAttribute("ForestPlanted")
@@ -83,14 +96,17 @@ local function begin()
 			continue
 		end
 		Analytics.onboarding(player, "CompletedForest") -- before the count goes up: newcomers only
-		DataService.add(player, "Coins", a.RewardCoins)
-		DataService.add(player, "ForestsCompleted", 1)
+		DataService.add(player, "Coins", reward)
+		local credit = PassService.bridgeMultiplier(player)
+		DataService.add(player, "ForestsCompleted", credit)
 		local profile = DataService.get(player)
 		if profile then
-			Analytics.forestMilestone(player, profile.ForestsCompleted)
+			for count = profile.ForestsCompleted - credit + 1, profile.ForestsCompleted do -- a +2 can't skip a milestone
+				Analytics.forestMilestone(player, count)
+			end
 		end
-		Analytics.earned(player, a.RewardCoins, "ForestReward", Enum.AnalyticsEconomyTransactionType.Gameplay)
-		Remotes.event("AwakeningReward"):FireClient(player, { coins = a.RewardCoins })
+		Analytics.earned(player, reward, "ForestReward", Enum.AnalyticsEconomyTransactionType.Gameplay)
+		Remotes.event("AwakeningReward"):FireClient(player, { coins = reward })
 	end
 	local now = workspace:GetServerTimeNow()
 	local carried = math.min(pending, a.MaxBreakMinutes * 60 - a.BreakSeconds)
@@ -129,6 +145,8 @@ function AwakeningService.finish()
 		Analytics.roulette()
 		task.wait(GameConfig.Roulette.SpinSeconds + GameConfig.Roulette.HoldSeconds)
 	end
+	-- The next canyon's map, behind a loading screen, when it's another one (MapService; a few seconds).
+	MapService.show(GameConfig.Tiers[nextTier].Map, GameConfig.Tiers[nextTier].Name)
 	ForestService.setTier(nextTier)
 	ForestService.reset()
 end

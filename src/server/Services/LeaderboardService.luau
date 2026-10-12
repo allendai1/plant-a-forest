@@ -4,7 +4,7 @@
 --   values are written every WriteSeconds (only when changed) and when they leave; the top Size are read every
 --   ReadSeconds and published as JSON in ReplicatedStorage.Leaderboards.<Stat> (a StringValue:
 --   [{ id, name, value }]). LeaderboardController draws them on the lobby boards.
--- - In-server: a leaderstats folder (Forests, Seeds, Strength, Speed) so Roblox's player list shows and sorts them.
+-- - In-server: a leaderstats folder (Bridges, Planks, Strength, Speed) so Roblox's player list shows and sorts them.
 -- Studio play sessions use their own stores (suffix _Studio), like DataService.
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -18,10 +18,11 @@ local GameConfig = require(ReplicatedStorage.Shared.GameConfig)
 
 local SUFFIX = if RunService:IsStudio() then "_Studio" else ""
 -- The player list's columns: attribute -> column name (the first one sorts the list).
--- Forests, Seeds (lifetime seeds planted), Strength and Speed since 2026-10-08, like the lobby boards.
+-- Forests, Seeds (lifetime seeds planted), Strength and Speed since 2026-10-08, like the lobby boards; shown as
+-- Bridges and Planks since the bridge (2026-10-10). Nothing reads these values by name.
 local PLAYER_LIST = {
-	{ attribute = "ForestsCompleted", name = "Forests" },
-	{ attribute = "SeedsPlanted", name = "Seeds" },
+	{ attribute = "ForestsCompleted", name = "Bridges" },
+	{ attribute = "SeedsPlanted", name = "Planks" },
 	{ attribute = "Strength", name = "Strength" },
 	{ attribute = "Speed", name = "Speed" },
 }
@@ -38,7 +39,8 @@ local folder: Folder
 local function storeOf(stat: string): OrderedDataStore
 	local store = stores[stat]
 	if not store then
-		store = DataStoreService:GetOrderedDataStore(`Top_{stat}{SUFFIX}`)
+		-- Canyon_ since the canyon game (2026-10-10): a fresh board; the Plant Trees! records stay in Top_<stat>.
+		store = DataStoreService:GetOrderedDataStore(`Canyon_Top_{stat}{SUFFIX}`)
 		stores[stat] = store
 	end
 	return store

@@ -1,6 +1,6 @@
 --!strict
--- CharacterDisplayController: the shop-display look of the Forest Ranger and Lord of the Forest NPCs (2026-10-07,
--- after Build the Pyramid's Pharaoh stand). Over each NPC (tagged CharacterNpc, with an Outfit attribute): the
+-- CharacterDisplayController: the shop-display look of the character pass NPCs (2026-10-07, after Build the Pyramid's
+-- Pharaoh stand): the Builderman since the bridge (2026-10-10; was the Forest Ranger), and the Lord of the Forest. Over each NPC (tagged CharacterNpc, with an Outfit attribute): the
 -- pass's Robux price, its name in big colored letters and its boosts (sparkles removed 2026-10-08), in
 -- the same color. The prompt that sells the pass is OutfitService's.
 
@@ -12,13 +12,21 @@ local UIStyle = require(script.Parent.Parent.UIStyle)
 
 local PRICE_COLOR = Color3.fromRGB(110, 255, 110)
 local COLORS: { [string]: Color3 } = { -- the stands' rim colors
-	Ranger = Color3.fromRGB(240, 210, 140),
-	Lord = Color3.fromRGB(150, 255, 150),
+	Builderman = Color3.fromRGB(255, 160, 50), -- the Turbo Builders Club orange
+	God = Color3.fromRGB(255, 205, 40), -- the God of Hammers robot's construction yellow
 }
-local ABOVE_HEAD = 2 -- studs over the NPC's head to the bottom of the sign
-local SIGN_STUDS = 7 -- the sign's width in the world
-local DESIGN = Vector2.new(460, 150) -- the layout's size in pixels before it's scaled to the sign
-local MAX_DISTANCE = 80
+-- Studs over the NPC's head to the bottom of the sign: right above his head, just clear of the hammer in his raised
+-- hand (2026-10-11, the user; it was 11.5 for a while, up above his stage's arch).
+local ABOVE_HEAD = 2.5
+-- The sign's width in the world: 22 since 2026-10-10 (the user's ask, after Build the Pyramid's hard-to-miss Sun God
+-- stand; was 7), so it reads from across camp.
+local SIGN_STUDS = 22
+local DESIGN = Vector2.new(600, 170) -- the layout's size in pixels before it's scaled to the sign
+-- Each line's top and height, as shares of the sign's height: the price, a big name, then the boosts on one line
+-- (short words keep them big: the text shrinks to fit the sign's width).
+local LINES = { Price = { 0, 0.22 }, PassName = { 0.18, 0.46 }, Boosts = { 0.64, 0.34 } }
+local MAX_DISTANCE = 250
+local SHADOW_DROP = 0.08 -- the shadow's offset, as a share of each line's height
 
 local CharacterDisplayController = {}
 
@@ -59,23 +67,47 @@ local function line(content: Instance, name: string, text: string, color: Color3
 	return label
 end
 
+local function boostsText(pass: GameConfig.HandsPass): string
+	local text = "Quick Pickup · Quick Build" -- not "2x Pickup": it's faster, not more planks (the user's call)
+	return if pass.BridgeMultiplier then `{pass.BridgeMultiplier}x Bridges · {text}` else text -- bridges first (the user's call)
+end
+
 -- Builds the sign over an NPC's head (2026-10-08: built into the place so it shows in Edit mode; the game only
 -- fills in the live price). Sized in studs, so it shrinks with distance like a real sign.
+-- The sign's size, placement and line layout (also put on a sign saved in the place, so a resize reaches it).
+local function place(sign: BillboardGui)
+	sign.Size = UDim2.fromScale(SIGN_STUDS, SIGN_STUDS * DESIGN.Y / DESIGN.X)
+	sign.SizeOffset = Vector2.new(0, 0.5) -- its bottom edge sits at the offset point
+	sign.StudsOffsetWorldSpace = Vector3.new(0, ABOVE_HEAD, 0)
+	sign.MaxDistance = MAX_DISTANCE
+	for name, at in LINES do
+		local label = sign:FindFirstChild(name)
+		if label and label:IsA("TextLabel") then
+			label.Position = UDim2.fromScale(0, at[1])
+			label.Size = UDim2.fromScale(1, at[2])
+			-- A drop shadow that scales with the text (it was 4 pixels down on a 22-stud sign, hidden by the outline)
+			-- and Build the Pyramid's gradient (2026-10-11, the user).
+			local shadow = label:FindFirstChild("Shadow")
+			if shadow and shadow:IsA("TextLabel") then
+				shadow.Position = UDim2.fromScale(0, SHADOW_DROP)
+			end
+			UIStyle.textGradient(label)
+		end
+	end
+end
+
 function CharacterDisplayController.buildSign(head: BasePart, pass: GameConfig.HandsPass): BillboardGui
 	local color = COLORS[pass.Outfit] or UIStyle.WHITE
 	local sign = Instance.new("BillboardGui")
 	sign.Name = "CharacterSign"
 	sign.Adornee = head
-	sign.Size = UDim2.fromScale(SIGN_STUDS, SIGN_STUDS * DESIGN.Y / DESIGN.X)
-	sign.SizeOffset = Vector2.new(0, 0.5) -- its bottom edge sits at the offset point
-	sign.StudsOffsetWorldSpace = Vector3.new(0, ABOVE_HEAD, 0)
-	sign.MaxDistance = MAX_DISTANCE
+	place(sign)
 	sign.LightInfluence = 0
 	-- A dark strip fading out at the sides behind the three lines (2026-10-08, like Build the Pyramid's).
 	UIStyle.band(sign).Size = UDim2.fromScale(1, 1)
-	line(sign, "Price", "R$ ...", PRICE_COLOR, 0, 0.26)
-	line(sign, "PassName", pass.Name, color, 0.24, 0.46)
-	line(sign, "Boosts", `{pass.Multiplier}x Quick Pickup · {pass.Multiplier}x Quick Plant`, color, 0.72, 0.22)
+	line(sign, "Price", "R$ ...", PRICE_COLOR, LINES.Price[1], LINES.Price[2])
+	line(sign, "PassName", pass.Name, color, LINES.PassName[1], LINES.PassName[2])
+	line(sign, "Boosts", boostsText(pass), color, LINES.Boosts[1], LINES.Boosts[2])
 	sign.Parent = head
 	return sign
 end
@@ -87,10 +119,23 @@ local function decorate(model: Instance)
 		return
 	end
 	local sign = head:FindFirstChild("CharacterSign") or CharacterDisplayController.buildSign(head, pass)
+	if sign:IsA("BillboardGui") then
+		place(sign)
+	end
+	-- A sign saved in the place may still have older words (the bridge renamed the Ranger, 2026-10-10).
+	for name, text in { PassName = pass.Name, Boosts = boostsText(pass) } do
+		local label = sign:FindFirstChild(name, true)
+		if label and label:IsA("TextLabel") then
+			setText(label, text)
+		end
+	end
 	local price = sign:FindFirstChild("Price", true)
 	if price and price:IsA("TextLabel") then
+		-- The Robux price and the coin price side by side, e.g. "R$720 · 400K coins" (2026-10-11, the user's call: no
+		-- progress, no "or").
 		local function showPrice()
-			setText(price, UIStyle.priceText(pass.PassId, Enum.InfoType.GamePass, showPrice))
+			local robux = UIStyle.priceText(pass.PassId, Enum.InfoType.GamePass, showPrice)
+			setText(price, if pass.CoinPrice then `{robux}  ·  {UIStyle.short(pass.CoinPrice)} coins` else robux)
 		end
 		showPrice()
 	end

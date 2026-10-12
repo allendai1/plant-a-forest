@@ -1,8 +1,76 @@
 # Handoff: where Plant the Forest stands
 
-Written 2026-10-06; last updated 2026-10-08 at the end of the soft-launch polish session. Read this after [CLAUDE.md](../CLAUDE.md), then [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md) (what changed from the original GDD and why) and the latest plan in `docs/plans/`.
+Written 2026-10-06; last updated 2026-10-12 (the Grand Canyon game, first section). Read this after [CLAUDE.md](../CLAUDE.md), then [docs/DESIGN_CHANGES.md](DESIGN_CHANGES.md) (what changed from the original GDD and why) and the latest plan in `docs/plans/`.
 
-## Where we left off (2026-10-08, late: soft-launch polish)
+## Where we left off (2026-10-12): Build Across the Grand Canyon
+
+**The game changed on 2026-10-10.** The same Roblox place is now *Build Across the Grand Canyon!*: players carry planks from camp and build a 3,000-stud bridge across a real canyon, row by row. The old Plant Trees! game is frozen on git `main` (tag `plant-trees-final`). Everything since is on branch **`grand-canyon`**, **all uncommitted** (commit and push only when the user asks). The full running log of decisions is [docs/notes/Grand Canyon game.md](notes/Grand%20Canyon%20game.md): read its last ~15 entries first. Everything below this section is Plant the Forest history: the workflow and gotchas still apply, the game details don't.
+
+**Studio and publishing.** Every script is synced to Studio. The user publishes themselves; the last publish was before the loading-screen, tutorial-belt and shop rounds, so **remind them to publish**. Studio currently has **Verdon live in Edit**; that's safe to publish, because `MapService.init` puts the Grand Canyon back at server start. Studio's MCP play button sometimes hangs after a stop ("Start play hasn't finished yet"); a Studio restart clears it, and the studio_id changes then (`list_roblox_studios`).
+
+**The three canyons** (GameConfig.Tiers; the roulette picks the next after each bridge):
+
+| Tier | Name | Map folder | Town | Bridge | Deck and planks |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Grand Canyon (Toroweap, AZ) | GrandCanyon | Springtown | concrete arch | concrete |
+| 2 | Verdon Gorge (Provence, replaced Bryce 2026-10-11) | Verdon | Moustiers | cable-stayed, after Millau | asphalt |
+| 3 | Zion Canyon (UT) | Zion | Springdale | suspension, green steel | steel diamond plate |
+
+- **Map folders:** each canyon is a folder in `ServerStorage.Maps` holding:
+  - a TerrainRegion, plus colors as attributes;
+  - FarCanyon (far scenery tiles), Nature, Landmarks, the far-rim flag and label, the town (always named `Springtown`) and `Site/Road`;
+  - a `Lighting` folder (sky, atmosphere, clouds, clock time).
+- **Swapping maps:** `MapService.swap` trades them with `Workspace.Map`; `show()` wraps that in the "HEADING TO" loading screen, which shows each canyon's picture and real location.
+- **Editing in Studio:** the local plugin `tools/plugins/MapSwitcher.lua` (Plugins tab, "Canyon Maps") switches maps in Edit and saves terrain edits back.
+- **Building a map:** the pipeline is in the note:
+  - `tools/canyon_heightmap.py` (`CANYON_PLACE=zion|verdon`), then `tools/canyon_terrain.luau`;
+  - `tools/canyon_farfield.py`, then Blender `tools/blender/build_farfield.py`, `tools/upload_fbx.py`, the MCP insert_asset, and `tools/build_farfield.luau`;
+  - `tools/build_town.luau`, `build_nature.luau`, `build_landmarks.luau` and `build_road.luau`, each with a `_G.<X>Place` switch.
+- **Plants** are low-poly Blender models: `tools/blender/build_zion_plants.py` and `build_verdon_plants.py`, kept in `ServerStorage.NatureAssets`.
+
+**Done in the 2026-10-11/12 session** (details in the note):
+- **Maps:**
+  - The Zion map: town, plants, sky, suspension bridge.
+  - The Verdon map, replacing Bryce.
+  - A deck material per map, also used for the carried planks and the camp pile (`GameConfig.Decks`).
+  - Loading-screen art per map (`GameConfig.LoadingArt`, `assets/loading/`).
+- **Conveyor belts:**
+  - Much faster: about 6.5 s end to end (`Grid.Belts`).
+  - 50% wider (`Belts.Width`).
+  - Belt hints ("Take the conveyor belt out!/back!").
+- **Tutorial:**
+  - Short lines with no step counter.
+  - A belt sub-step before "Press E to build".
+  - "Take the conveyor belt back!" in the camp steps.
+- **Other UI:**
+  - The first quest's claim spotlight.
+  - The join loading screen with a real progress bar (`src/first/Loading.client.luau` → ReplicatedFirst.Loading); the story intro waits for it.
+  - Shop character cards without emojis, with text kept inside the card.
+  - A gift-box icon on the Daily button.
+  - Phone detection no longer treats a touchscreen laptop in Studio as a phone.
+- **Fixes in the map tools:**
+  - The heightmap tool's Grand Canyon constants overrode every map (fixed; GC and Zion regenerate byte for byte).
+  - Verdon's far scenery is fitted to its walls (`fit_under`).
+
+**Open items, next session:**
+1. **Check the join loading bar's layout.** It's now a full-width yellow rectangle above the bottom stripes, with the status line raised above it. That last change wasn't seen: the play button hung.
+2. **Head start for a new server's first bridge:** proposed 25–35% pre-built, silently, with no rewards and no celebrations, first bridge only, as `FirstBridgeHeadStart` in GameConfig. **The user hasn't said yes yet;** ask.
+3. **Graphics quality:** at low settings Roblox draws less far terrain and scenery. A game can't change that; there's only a tip on the loading screen for manual levels below 8. Nothing more planned.
+4. **Grand Canyon and Zion far scenery:** they could get Verdon's `fit_under` (fewer holes at the terrain's streaming edge). That needs a far-scenery re-upload each (free). Not asked for yet.
+5. **The user tests:**
+   - the touchscreen laptop layout, in Studio and live;
+   - phones;
+   - a 2-player run.
+6. **Commit** the `grand-canyon` branch when the user asks.
+
+**Gotchas from this session:**
+- `execute_luau` gets fresh module instances. Test through the `DevCommand` remote (`setTier`, `fillForest`, `fillAll`, `setCarried`, `restartTutorial`), not by requiring client modules.
+- A Python heredoc in the Bash tool can break on long scripts: write the script to the scratchpad and run it with `python -I`.
+- stylua re-wraps long lines, so exact-match edits fail. Run `stylua --column-width 400` first, edit, then run stylua again.
+- Check a file's byte count right before syncing, and assert it in Studio.
+- Don't start a playtest if Studio is already in Play: it's probably the user's.
+
+## Plant the Forest history: where it was left (2026-10-08, late: soft-launch polish)
 
 **State:** feature-complete MVP, polished and published by the user (last publish was before the final round below, so **republish**). Every script in Studio matches the repo (checked by comparing each script's `#Source` with the file size). Studio-only edits that exist only in the saved place: the seed stall put away in `ServerStorage.SavedForLater`, the Ranger-copy shopkeeper, the four lobby leaderboards (user-placed, r about 146), the group gift bulletin board. **The user must save and publish** to keep them.
 

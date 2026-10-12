@@ -292,7 +292,7 @@ local function showLocked(multiplier: number, forestsNeeded: number?)
 	lastLocked = os.clock()
 	local forests = forestsNeeded or 0
 	HUD.banner(
-		`{multiplier}x training unlocks at {forests} forest{if forests == 1 then "" else "s"} (or in the SHOP)`,
+		`{multiplier}x training unlocks at {forests} bridge{if forests == 1 then "" else "s"} (or in the SHOP)`,
 		Color3.fromRGB(255, 200, 120)
 	)
 end
@@ -335,9 +335,22 @@ function TrainingController.start()
 		stepBenches(dt)
 		poseCarriers()
 	end)
-	localPlayer.CharacterAdded:Connect(function()
+	-- No tripping (2026-10-11, the user: running fast into something knocked players over): your character can't enter
+	-- the falling-down or ragdoll states. (Your client runs your character's physics, so setting it here is enough.)
+	local function steady(character: Model)
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if humanoid and humanoid:IsA("Humanoid") then
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		end
+	end
+	localPlayer.CharacterAdded:Connect(function(character)
 		runTrack = nil
+		steady(character)
 	end)
+	if localPlayer.Character then
+		task.spawn(steady, localPlayer.Character)
+	end
 
 	Remotes.event("StationLocked").OnClientEvent:Connect(showLocked)
 	refreshBenches()

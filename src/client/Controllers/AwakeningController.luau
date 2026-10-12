@@ -1,8 +1,8 @@
 --!strict
 -- AwakeningController: the forest complete moment on this client (docs/plans/M6.md).
 -- Driven by ForestState.AwakeningEndsAt. When it goes from 0 to a time, the cutscene plays: the camera
--- flies up and around the Ancient Tree as it awakens over the finished forest, with a Skip button.
--- (Movement isn't locked: this place has no PlayerModule to disable, and the camera is scripted anyway.) Then "Forest complete! +500 coins" (from AwakeningReward) and the spring's
+-- flies up and around the finished bridge (since 2026-10-10; it circled the Ancient Tree), with a Skip button.
+-- (Movement isn't locked: this place has no PlayerModule to disable, and the camera is scripted anyway.) Then "Bridge complete! +500 coins" (from AwakeningReward) and the spring's
 -- multiplier show, and the break starts: every tree sways (the animals walking in and the birds were removed on
 -- 2026-10-08, the user's call). When it goes back to 0, the break visuals stop and the
 -- forest resets in place (the trees go, the Ancient Tree shrinks back).
@@ -15,18 +15,18 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage.Shared
 local GameConfig = require(Shared.GameConfig)
 local Remotes = require(Shared.Remotes)
-local AncientTreeController = require(script.Parent.AncientTreeController)
-local ForestController = require(script.Parent.ForestController)
+local BridgeController = require(script.Parent.BridgeController)
 local HUD = require(script.Parent.HUD)
 local Sounds = require(script.Parent.Parent.Sounds)
 local UIStyle = require(script.Parent.Parent.UIStyle)
 
 -- Look (visual only).
 local ORBIT_DEGREES = 120
-local ORBIT_RADIUS = { 280, 470 } -- from, to (studs from the hub center)
-local ORBIT_HEIGHT = { 90, 320 }
-local LOOK_HEIGHT = 100 -- the camera looks at this height on the trunk (was 170 before the tree was drawn at 60%)
-local AWAKEN_AT = 1.5 -- seconds into the cutscene when the Ancient Tree awakens
+-- From, to: studs from the bridge's middle, plus this many times the bridge's length (so long bridges fit).
+local ORBIT_RADIUS = { 120, 220 }
+local ORBIT_RADIUS_PER_STUD = { 0.55, 0.85 }
+local ORBIT_HEIGHT = { 60, 220 }
+local LOOK_HEIGHT = -10 -- the camera looks a little under the deck, so the canyon shows below it
 local SPRING_BANNER_DELAY = 3.3 -- after the reward message
 local pendingNeeded: number? = nil -- no forest credit: the acorns that would have earned it
 
@@ -46,9 +46,12 @@ local function lerp(range: { number }, t: number): number
 	return range[1] + (range[2] - range[1]) * t
 end
 
-local function centerOf(): Vector3
-	local value = forestState:GetAttribute("Center")
-	return if typeof(value) == "Vector3" then value else Vector3.zero
+-- The finished bridge's middle at deck height, and its length in studs.
+local function bridgeMiddle(): (Vector3, number)
+	local rows = forestState:GetAttribute("LastRing")
+	local count = if typeof(rows) == "number" and rows > 0 then rows else GameConfig.Grid.Rows
+	local length = count * GameConfig.Grid.SlotStuds
+	return BridgeController.frame():PointToWorldSpace(Vector3.new(0, 0, -length / 2)), length
 end
 
 local function startBreak()
@@ -56,14 +59,14 @@ local function startBreak()
 		return
 	end
 	breakOn = true
-	AncientTreeController.setAwakened(true)
-	ForestController.setSway(true)
 end
 
--- The user's wording (2026-10-08), with "Climb" once the Spring is up in the tree (2026-10-09).
+-- The user's wording (2026-10-08); the Spring is a glowing circle on the far rim since 2026-10-10 (the user's ask), in
+-- Springtown's oasis since the same day (tools/build_town.luau, GrandOpeningController). Each map's own town since
+-- 2026-10-11 (GameConfig Tiers[].Town).
 local function springText(multiplier: unknown): string
-	local verb = if GameConfig.Awakening.SpringHeightStuds > 0 then "Climb" else "Stand by"
-	return `{verb} the World Tree for a {multiplier}x boost!`
+	local town = GameConfig.tierFor(forestState:GetAttribute("TierId")).Town
+	return `{town} is connected! Sit in the Spring for a {multiplier}x Boost!` -- the user's wording
 end
 
 local function announce()
@@ -71,8 +74,8 @@ local function announce()
 	if pendingCoins then
 		HUD.banner(
 			if pendingCoins > 0
-				then `Forest complete! +{pendingCoins} coins`
-				else `Forest complete! Plant {pendingNeeded or 50} acorns next time to earn it`
+				then `Bridge complete! +{pendingCoins} coins`
+				else `Bridge complete! Place {pendingNeeded or 50} planks next time to earn it`
 		)
 		pendingCoins = nil
 		task.delay(SPRING_BANNER_DELAY, function()
@@ -87,7 +90,8 @@ end
 
 local function playCutscene()
 	local camera = workspace.CurrentCamera
-	local center = centerOf()
+	local center, length = bridgeMiddle()
+	local radii = { ORBIT_RADIUS[1] + length * ORBIT_RADIUS_PER_STUD[1], ORBIT_RADIUS[2] + length * ORBIT_RADIUS_PER_STUD[2] }
 	local start = camera.CFrame
 	local startAngle = math.atan2(start.Position.Z - center.Z, start.Position.X - center.X)
 	local seconds = GameConfig.Awakening.CutsceneSeconds
@@ -131,13 +135,12 @@ local function playCutscene()
 		end
 		local e = smooth(t)
 		local angle = startAngle + math.rad(ORBIT_DEGREES) * e
-		local radius = lerp(ORBIT_RADIUS, e)
+		local radius = lerp(radii, e)
 		local position = center + Vector3.new(math.cos(angle) * radius, lerp(ORBIT_HEIGHT, e), math.sin(angle) * radius)
 		local frame = CFrame.lookAt(position, center + Vector3.new(0, LOOK_HEIGHT, 0))
 		camera.CFrame = frame -- a straight cut from the player's view
 	end)
 	skip.Activated:Connect(finish)
-	task.delay(AWAKEN_AT, AncientTreeController.setAwakened, true)
 end
 
 local function endBreak()
@@ -145,8 +148,6 @@ local function endBreak()
 		stopCutscene()
 	end
 	breakOn = false
-	ForestController.setSway(false)
-	AncientTreeController.setAwakened(false)
 end
 
 function AwakeningController.start()
@@ -157,7 +158,7 @@ function AwakeningController.start()
 			pendingNeeded = reward.needed
 		end
 	end)
-	while not ForestController.ready() do
+	while not BridgeController.ready() do
 		task.wait(0.2) -- the trees and the Ancient Tree are built with the snapshot
 	end
 	local function endsAt(): number
