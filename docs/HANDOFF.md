@@ -4,7 +4,7 @@ Written 2026-10-06; last updated 2026-10-12 (the Grand Canyon game, first sectio
 
 ## Where we left off (2026-10-12): Build Across the Grand Canyon
 
-**The game changed on 2026-10-10.** The same Roblox place is now *Build Across the Grand Canyon!*: players carry planks from camp and build a 3,000-stud bridge across a real canyon, row by row. The old Plant Trees! game is frozen on git `main` (tag `plant-trees-final`). Everything since is on branch **`grand-canyon`**, **all uncommitted** (commit and push only when the user asks). The full running log of decisions is [docs/notes/Grand Canyon game.md](notes/Grand%20Canyon%20game.md): read its last ~15 entries first. Everything below this section is Plant the Forest history: the workflow and gotchas still apply, the game details don't.
+**The game changed on 2026-10-10.** The same Roblox place is now *Build Across the Grand Canyon!*: players carry planks from camp and build a 3,000-stud bridge across a real canyon, row by row. The old Plant Trees! game is frozen on git `main` (tag `plant-trees-final`). Everything since is on branch **`grand-canyon`**, pushed as 9807765 on 2026-10-12 (commit and push only when the user asks). The full running log of decisions is [docs/notes/Grand Canyon game.md](notes/Grand%20Canyon%20game.md): read its last ~15 entries first. Everything below this section is Plant the Forest history: the workflow and gotchas still apply, the game details don't.
 
 **Studio and publishing.** Every script is synced to Studio. The user publishes themselves; the last publish was before the loading-screen, tutorial-belt and shop rounds, so **remind them to publish**. Studio currently has **Verdon live in Edit**; that's safe to publish, because `MapService.init` puts the Grand Canyon back at server start. Studio's MCP play button sometimes hangs after a stop ("Start play hasn't finished yet"); a Studio restart clears it, and the studio_id changes then (`list_roblox_studios`).
 
@@ -61,7 +61,7 @@ Written 2026-10-06; last updated 2026-10-12 (the Grand Canyon game, first sectio
    - the touchscreen laptop layout, in Studio and live;
    - phones;
    - a 2-player run.
-6. **Commit** the `grand-canyon` branch when the user asks.
+6. Commit and push new work on `grand-canyon` when the user asks (last push 9807765).
 
 **Gotchas from this session:**
 - `execute_luau` gets fresh module instances. Test through the `DevCommand` remote (`setTier`, `fillForest`, `fillAll`, `setCarried`, `restartTutorial`), not by requiring client modules.
